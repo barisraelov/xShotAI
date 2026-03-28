@@ -1,0 +1,17 @@
+.welcome .welcome-hero { padding: 24px 20px; }
+.welcome .welcome-hero h1 { font-size: 1.65rem; font-weight: 700; margin-bottom: 8px; line-height: 1.2; }
+.accent { color: var(--orange); }
+
+.steps { list-style: none; padding: 0 20px 24px; }
+.steps li { display: flex; gap: 14px; padding: 14px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.step-icon {
+  width: 44px; height: 44px; background: var(--orange-dim); border-radius: 12px;
+  display: flex; align-items: center; justify-content: center; color: var(--orange); flex-shrink: 0;
+}
+.steps strong { display: block; margin-bottom: 4px; }
+.steps span { color: var(--text-muted); font-size: 0.9rem; }
+
+.cta-row { display: flex; gap: 12px; padding: 0 20px 28px; }
+
+.slogan { text-align: center; color: var(--text-muted); font-size: 0.85rem; padding-bottom: 12px; }
+.slogan b { color: var(--orange); }

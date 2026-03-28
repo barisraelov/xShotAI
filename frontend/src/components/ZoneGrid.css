@@ -1,0 +1,53 @@
+.zone-block-title {
+  padding: 14px 20px 6px;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--orange);
+}
+
+.zones-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 20px 14px;
+}
+
+.zone-card.wide { grid-column: 1 / -1; }
+
+.zone-card {
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  padding: 14px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.zmeta { flex: 1; }
+.zname { color: var(--text-muted); font-size: 0.82rem; margin-bottom: 3px; }
+.zval  { font-weight: 800; font-size: 1.15rem; }
+.zattempts { font-size: 0.72rem; color: var(--text-muted); margin-top: 2px; }
+
+.zone-ring {
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: conic-gradient(var(--orange) var(--zone-deg, 0deg), rgba(255,255,255,0.08) 0);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.zone-ring::after {
+  content: "";
+  width: 34px;
+  height: 34px;
+  border-radius: 50%;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}

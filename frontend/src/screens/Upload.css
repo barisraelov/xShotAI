@@ -1,0 +1,47 @@
+.page-title { padding: 8px 20px 6px; font-size: 1.5rem; font-weight: 700; color: var(--orange); }
+.page-sub { padding: 0 20px 20px; color: var(--text-muted); font-size: 0.95rem; }
+
+.upload-drop {
+  margin: 0 20px 20px;
+  min-height: 160px;
+  background: var(--bg-card);
+  border: 2px dashed rgba(255, 107, 44, 0.35);
+  border-radius: var(--radius);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  cursor: pointer;
+  padding: 24px;
+  transition: border-color 0.2s;
+}
+
+.upload-drop:active, .upload-drop.has-file {
+  border-color: var(--orange);
+}
+
+.upload-icon { font-size: 2rem; }
+.upload-cta { font-weight: 600; }
+.upload-hint, .upload-size { font-size: 0.82rem; color: var(--text-muted); }
+.upload-filename { font-size: 0.9rem; font-weight: 600; word-break: break-all; text-align: center; }
+
+.req-list { padding: 0 20px 20px; }
+.req-list h3 {
+  font-size: 0.7rem; letter-spacing: 0.1em; color: var(--text-muted);
+  margin-bottom: 10px; text-transform: uppercase;
+}
+.req-list li {
+  list-style: none; padding: 6px 0 6px 24px; position: relative;
+  color: var(--text-muted); font-size: 0.88rem;
+}
+.req-list li::before { content: "✓"; position: absolute; left: 0; color: var(--green); }
+
+.footer-cta {
+  position: fixed;
+  bottom: calc(72px + var(--safe-bottom));
+  left: 50%;
+  transform: translateX(-50%);
+  width: min(350px, calc(100% - 40px));
+}
+.footer-cta .btn-primary { width: 100%; }

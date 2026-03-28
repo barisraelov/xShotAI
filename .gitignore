@@ -1,0 +1,46 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.Python
+.venv/
+venv/
+env/
+
+# Node / frontend
+frontend/node_modules/
+frontend/dist/
+frontend/dist-ssr/
+*.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# IDE / OS
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+Thumbs.db
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Generated validation artifacts
+backend/test_videos/output/
+
+# Local test videos (large — keep on your machine only)
+backend/test_videos/input/*.mp4
+backend/test_videos/input/*.mov
+backend/test_videos/input/*.webm
+backend/test_videos/input/*.avi
+backend/test_videos/input/*.mkv
+PROJECT_CONTEXT.md

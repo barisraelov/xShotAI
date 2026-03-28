@@ -1,0 +1,56 @@
+.stats-hero {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 16px 20px;
+  text-align: center;
+}
+
+.stats-hero .big { font-size: 1.75rem; font-weight: 800; }
+.stats-hero .lbl { font-size: 0.75rem; color: var(--text-muted); }
+
+.accuracy-row {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 20px 20px;
+}
+
+.accuracy-ring-wrap {
+  position: relative;
+  width: 96px;
+  height: 96px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.accuracy-ring-big {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: conic-gradient(var(--orange) var(--accuracy-deg, 0deg), var(--bg-card) 0);
+}
+
+.accuracy-ring-big::after {
+  content: "";
+  position: absolute;
+  inset: 12px;
+  border-radius: 50%;
+  background: var(--bg);
+}
+
+.accuracy-pct {
+  position: relative;
+  z-index: 1;
+  font-weight: 700;
+  font-size: 1.15rem;
+}
+
+.accuracy-label {
+  margin-top: 8px;
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

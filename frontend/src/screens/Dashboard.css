@@ -1,0 +1,29 @@
+.big-cta {
+  margin: 0 20px 20px;
+  padding: 18px 20px;
+  background: linear-gradient(135deg, #ff6b2c, #ea580c);
+  border: none;
+  border-radius: var(--radius);
+  color: #fff;
+  font-weight: 700;
+  width: calc(100% - 40px);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  box-shadow: 0 8px 32px rgba(255, 107, 44, 0.35);
+  font-size: 1rem;
+}
+
+.dashboard-hint {
+  padding: 0 20px;
+  color: var(--text-muted);
+  font-size: 0.9rem;
+}
+
+.dashboard-cta-row {
+  display: flex;
+  gap: 10px;
+  padding: 0 20px 24px;
+  flex-wrap: wrap;
+}

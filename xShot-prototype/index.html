@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="en" dir="ltr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <title>xShot AI — Prototype</title>
+  <link rel="stylesheet" href="styles.css" />
+  <style>
+    /* Upload drop zone */
+    .upload-drop {
+      margin: 0 20px 16px; padding: 32px 20px;
+      background: var(--bg-card);
+      border: 2px dashed rgba(255, 107, 44, 0.35);
+      border-radius: var(--radius); text-align: center; cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .upload-drop:hover { border-color: var(--orange); }
+    .upload-drop.has-file { border-color: var(--green); border-style: solid; }
+    .upload-drop-icon { font-size: 2rem; margin-bottom: 10px; }
+    .upload-drop-main { font-weight: 600; margin-bottom: 4px; font-size: 0.95rem; }
+    .upload-drop-sub { color: var(--text-muted); font-size: 0.82rem; }
+
+    /* Error / info box */
+    .error-box {
+      margin: 0 20px 12px; padding: 12px 16px;
+      background: rgba(248, 113, 113, 0.12);
+      border: 1px solid rgba(248, 113, 113, 0.4);
+      border-radius: var(--radius); color: var(--red); font-size: 0.9rem;
+    }
+  </style>
+</head>
+<body class="has-proto-nav">
+  <nav class="proto-bar" aria-label="Jump to screen">
+    <span>Jump</span>
+    <button type="button" onclick="go('welcome')">Welcome</button>
+    <button type="button" onclick="go('dashboard')">Dashboard</button>
+    <button type="button" onclick="go('upload')">Upload</button>
+    <button type="button" onclick="go('analyzing')">Analyzing</button>
+    <button type="button" onclick="go('session')">Session</button>
+    <button type="button" onclick="go('heatmap')">Heatmap</button>
+    <button type="button" onclick="go('progress')">Progress</button>
+  </nav>
+
+  <div class="app-frame hidden-nav" id="frame">
+    <div class="screen active" id="screen-welcome">
+      <div class="top-bar"><div class="logo"><span class="logo-icon">🏀</span> xShot AI</div></div>
+      <div class="welcome-hero">
+        <h1>Analyze your basketball shot<br /><span class="accent">using AI</span></h1>
+      </div>
+      <ul class="steps">
+        <li><div class="step-icon">▶</div><div><strong>Upload video</strong><span>Record or pick from gallery</span></div></li>
+        <li><div class="step-icon">🧠</div><div><strong>AI analysis</strong><span>Detects shots and makes / misses</span></div></li>
+        <li><div class="step-icon">📊</div><div><strong>Performance insights</strong><span>Stats and tips</span></div></li>
+      </ul>
+      <div class="cta-row">
+        <button type="button" class="btn" onclick="go('dashboard')">Log In</button>
+        <button type="button" class="btn btn-primary" onclick="go('dashboard')">Sign Up</button>
+      </div>
+      <p class="slogan">Track · Improve · <b>Dominate</b></p>
+      <p class="proto-hint">Use <b>Jump</b> above for any screen — or Log In / Sign Up for the real flow.</p>
+    </div>
+
+    <div class="screen" id="screen-dashboard">
+      <div class="top-bar">
+        <div class="logo"><span class="logo-icon">🏀</span> xShot AI</div>
+        <div class="top-actions">
+          <button type="button" class="icon-btn" aria-label="Messages">✉</button>
+          <div class="avatar"></div>
+        </div>
+      </div>
+      <button type="button" class="big-cta" onclick="go('upload')"><span>▶ Upload training video</span><span>→</span></button>
+      <div class="section-title">This session</div>
+      <div class="stat-grid-4">
+        <div class="stat-card"><div class="stat-label">Shots detected</div><div class="stat-value">58</div></div>
+        <div class="stat-card"><div class="stat-label">Made</div><div class="stat-value">34</div></div>
+        <div class="stat-card"><div class="stat-label">Missed</div><div class="stat-value">24</div></div>
+        <div class="stat-card">
+          <div class="stat-label">Accuracy</div>
+          <div class="stat-accuracy"><span class="stat-value">59%</span><span class="accuracy-ring"></span></div>
+        </div>
+      </div>
+      <div class="section-title">Recent trainings</div>
+      <div class="list-card" onclick="go('session')">
+        <div class="thumb"></div><div class="meta">
+          <div class="date">April 22, 2024</div>
+          <div class="stats">41 shots · <span class="hl">66%</span> · score <span class="hl">82</span></div>
+        </div><span>→</span>
+      </div>
+      <div class="list-card" onclick="go('session')">
+        <div class="thumb"></div><div class="meta">
+          <div class="date">April 18, 2024</div>
+          <div class="stats">58 shots · <span class="hl">59%</span></div>
+        </div><span>→</span>
+      </div>
+      <nav class="bottom-nav">
+        <button type="button" class="active" onclick="go('dashboard')">🏠 Dashboard</button>
+        <button type="button" onclick="go('heatmap')">🔥 Heatmap</button>
+        <button type="button" onclick="go('progress')">📈 Progress</button>
+      </nav>
+    </div>
+
+    <div class="screen" id="screen-upload">
+      <div class="top-bar">
+        <div class="logo"><span class="logo-icon">🏀</span> xShot AI</div>
+        <div class="top-actions"><button type="button" class="icon-btn">✉</button><div class="avatar"></div></div>
+      </div>
+      <h1 class="page-title">Upload training video</h1>
+      <p class="page-sub">Select a recorded session to analyze</p>
+
+      <div class="upload-drop" id="upload-drop" onclick="triggerFilePick()">
+        <div id="upload-icon" class="upload-drop-icon">📤</div>
+        <div id="upload-main-text" class="upload-drop-main">Tap to select a video</div>
+        <div id="upload-sub-text" class="upload-drop-sub">MP4, MOV or AVI</div>
+        <input id="file-input" type="file" accept="video/*" style="display:none" onchange="handleFileSelect(event)">
+      </div>
+
+      <div class="req-list"><h3>Requirements</h3><ul>
+        <li>Camera facing the hoop (elevated / diagonal angle)</li>
+        <li>60 fps recommended</li>
+        <li>Static camera — no panning</li>
+      </ul></div>
+
+      <div class="error-box" id="upload-error" style="display:none"></div>
+      <div class="footer-cta"><button type="button" class="btn btn-primary" id="upload-btn" onclick="startAnalysis()">Analyze</button></div>
+      <nav class="bottom-nav">
+        <button type="button" onclick="go('dashboard')">🏠 Dashboard</button>
+        <button type="button" onclick="go('heatmap')">🔥 Heatmap</button>
+        <button type="button" onclick="go('progress')">📈 Progress</button>
+      </nav>
+    </div>
+
+    <div class="screen" id="screen-analyzing">
+      <div class="top-bar">
+        <div class="logo"><span class="logo-icon">🏀</span> xShot AI</div>
+        <div class="top-actions"><button type="button" class="icon-btn">✉</button><div class="avatar"></div></div>
+      </div>
+      <div class="analyzing"><h2>Analyzing <span>shot video</span>…</h2></div>
+      <div class="progress-bar"><div id="progress-bar-fill"></div></div>
+      <ul class="checklist">
+        <li>Detecting player skeleton</li>
+        <li>Tracking ball trajectory</li>
+        <li>Classifying shot attempts</li>
+        <li>Mapping to court zones</li>
+      </ul>
+
+      <div class="error-box" id="analyzing-error" style="display:none;margin:24px 20px 0"></div>
+      <div id="analyzing-retry" style="display:none;text-align:center;padding:12px 20px 20px">
+        <button type="button" class="btn btn-primary" onclick="go('upload')" style="max-width:220px;margin:0 auto">Try again</button>
+      </div>
+
+      <p id="demo-finish-btn" style="text-align:center;padding:20px">
+        <button type="button" class="btn btn-primary" onclick="go('session')" style="max-width:220px;margin:0 auto;display:block">(Demo) Finish analysis</button>
+      </p>
+    </div>
+
+    <div class="screen" id="screen-session">
+      <div class="top-bar">
+        <div class="logo"><span class="logo-icon">🏀</span> xShot AI</div>
+        <button type="button" class="icon-btn" onclick="go('dashboard')">☰</button>
+      </div>
+      <div class="stats-hero">
+        <div><div class="big" id="session-shots">58</div><div class="lbl">Shots</div></div>
+        <div><div class="big" id="session-made" style="color:var(--green)">34</div><div class="lbl">Made</div></div>
+        <div><div class="big" id="session-missed" style="color:var(--red)">24</div><div class="lbl">Missed</div></div>
+      </div>
+      <div class="rings-row">
+        <div class="ring">
+          <div class="ring-visual" id="session-ring"></div>
+          <div class="pct" id="session-accuracy-pct">59%</div>
+          <div class="lbl">Accuracy</div>
+        </div>
+        <div class="ring" style="flex:1;max-width:140px">
+          <div class="consistency-bar" style="margin:0">
+            <div class="lbl">Consistency</div>
+            <div class="bar"><div class="fill" style="width:76%"></div></div>
+            <div style="display:flex;justify-content:space-between;font-size:0.7rem;color:var(--text-muted);margin-top:6px"><span>Low</span><span>High</span></div>
+            <div style="text-align:center;font-weight:700;margin-top:4px">76%</div>
+          </div>
+        </div>
+      </div>
+      <div class="tip-box" id="session-tip">💡 <strong>Tip:</strong> Practice more from the <strong>left wing</strong> — accuracy is weaker there.</div>
+      <div id="session-shotmap-row" style="display:flex;gap:10px;padding:0 20px 24px;flex-wrap:wrap">
+        <button type="button" class="btn" onclick="go('heatmap')" style="flex:1;min-width:120px">Shot map</button>
+        <button type="button" class="btn" onclick="go('progress')" style="flex:1;min-width:120px">Progress</button>
+      </div>
+      <nav class="bottom-nav">
+        <button type="button" onclick="go('dashboard')">🏠 Dashboard</button>
+        <button type="button" class="active" onclick="go('heatmap')">🔥 Heatmap</button>
+        <button type="button" onclick="go('progress')">📈 Progress</button>
+      </nav>
+    </div>
+
+    <div class="screen" id="screen-heatmap">
+      <div class="top-bar">
+        <div class="logo"><span class="logo-icon">🏀</span> xShot AI</div>
+        <button type="button" class="icon-btn" onclick="go('dashboard')">☰</button>
+      </div>
+      <div class="heatmap-topline">
+        <div class="pill"><b>34</b> made · <b>58</b> attempts</div>
+        <button type="button" class="dropdown-btn">This session ▾</button>
+      </div>
+      <div class="court">
+        <svg class="court-canvas" viewBox="0 0 100 60" preserveAspectRatio="none" aria-hidden="true">
+          <defs>
+            <linearGradient id="line" x1="0" y1="0" x2="0" y2="1">
+              <stop offset="0" stop-color="rgba(255,255,255,0.22)" /><stop offset="1" stop-color="rgba(255,255,255,0.12)" />
+            </linearGradient>
+          </defs>
+          <rect x="4" y="4" width="92" height="52" rx="6" fill="none" stroke="url(#line)" stroke-width="0.8" />
+          <rect x="34" y="30" width="32" height="22" rx="2.5" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="0.8" />
+          <path d="M34 30 Q50 16 66 30" fill="none" stroke="rgba(255,255,255,0.14)" stroke-width="0.8" />
+          <path d="M42 52 Q50 44 58 52" fill="none" stroke="rgba(255,255,255,0.16)" stroke-width="0.8" />
+          <rect x="47.5" y="50" width="5" height="0.8" rx="0.4" fill="rgba(255,255,255,0.22)" />
+          <circle cx="50" cy="52" r="1.6" fill="none" stroke="rgba(255,255,255,0.26)" stroke-width="0.8" />
+          <path d="M16 56 V38" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="0.8" />
+          <path d="M84 56 V38" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="0.8" />
+          <path d="M16 38 Q50 6 84 38" fill="none" stroke="rgba(255,255,255,0.10)" stroke-width="0.8" />
+        </svg>
+        <span class="shot-dot strong" style="top:18%;left:22%"></span>
+        <span class="shot-dot strong" style="top:34%;left:30%"></span>
+        <span class="shot-dot avg" style="top:28%;left:62%"></span>
+        <span class="shot-dot avg" style="top:40%;left:74%"></span>
+        <span class="shot-dot weak" style="top:24%;left:48%"></span>
+        <span class="shot-dot avg" style="top:52%;left:58%"></span>
+        <span class="shot-dot strong" style="top:48%;left:38%"></span>
+        <span class="shot-dot weak" style="top:44%;left:52%"></span>
+      </div>
+      <div class="legend"><span class="g">Strong</span><span class="o">Average</span><span class="r">Weak</span></div>
+
+      <div class="section-title">Zones</div>
+
+      <h3 class="zone-block-title">Mid-range</h3>
+      <div class="zones-grid">
+        <div class="zone-card"><div class="zmeta"><div class="zname">Center</div><div class="zval">52%</div></div><div class="zone-ring" style="--pct:52%"></div></div>
+        <div class="zone-card"><div class="zmeta"><div class="zname">Baseline</div><div class="zval">44%</div></div><div class="zone-ring" style="--pct:44%"></div></div>
+        <div class="zone-card"><div class="zmeta"><div class="zname">Left wing</div><div class="zval">46%</div></div><div class="zone-ring" style="--pct:46%"></div></div>
+        <div class="zone-card"><div class="zmeta"><div class="zname">Right wing</div><div class="zval">50%</div></div><div class="zone-ring" style="--pct:50%"></div></div>
+      </div>
+
+      <h3 class="zone-block-title">Three-point</h3>
+      <div class="zones-grid">
+        <div class="zone-card"><div class="zmeta"><div class="zname">Left corner</div><div class="zval">38%</div></div><div class="zone-ring" style="--pct:38%"></div></div>
+        <div class="zone-card"><div class="zmeta"><div class="zname">Right corner</div><div class="zval">41%</div></div><div class="zone-ring" style="--pct:41%"></div></div>
+        <div class="zone-card"><div class="zmeta"><div class="zname">Left wing</div><div class="zval">35%</div></div><div class="zone-ring" style="--pct:35%"></div></div>
+        <div class="zone-card"><div class="zmeta"><div class="zname">Right wing</div><div class="zval">40%</div></div><div class="zone-ring" style="--pct:40%"></div></div>
+        <div class="zone-card wide"><div class="zmeta"><div class="zname">Top of the key</div><div class="zval">36%</div></div><div class="zone-ring" style="--pct:36%"></div></div>
+      </div>
+
+      <h3 class="zone-block-title">Extended range</h3>
+      <div class="zones-grid">
+        <div class="zone-card wide"><div class="zmeta"><div class="zname">Extended range</div><div class="zval">28%</div></div><div class="zone-ring" style="--pct:28%"></div></div>
+      </div>
+
+      <nav class="bottom-nav">
+        <button type="button" onclick="go('dashboard')">🏠 Dashboard</button>
+        <button type="button" class="active">🔥 Heatmap</button>
+        <button type="button" onclick="go('progress')">📈 Progress</button>
+      </nav>
+    </div>
+
+    <div class="screen" id="screen-progress">
+      <div class="top-bar">
+        <div class="logo"><span class="logo-icon">🏀</span> xShot AI</div>
+        <button type="button" class="icon-btn" onclick="go('dashboard')">☰</button>
+      </div>
+      <p style="padding:12px 20px;color:var(--text-muted)">Last 10 sessions ▾</p>
+      <div style="margin:16px 20px;height:160px;background:var(--bg-card);border-radius:var(--radius);display:flex;align-items:flex-end;justify-content:space-around;padding:16px 12px;gap:4px">
+        <div style="flex:1;background:linear-gradient(180deg,var(--orange),transparent);height:45%;border-radius:4px 4px 0 0;opacity:0.8"></div>
+        <div style="flex:1;background:linear-gradient(180deg,#3b82f6,transparent);height:52%;border-radius:4px 4px 0 0;opacity:0.8"></div>
+        <div style="flex:1;background:linear-gradient(180deg,var(--orange),transparent);height:55%;border-radius:4px 4px 0 0;opacity:0.8"></div>
+        <div style="flex:1;background:linear-gradient(180deg,#3b82f6,transparent);height:60%;border-radius:4px 4px 0 0;opacity:0.8"></div>
+        <div style="flex:1;background:linear-gradient(180deg,var(--orange),transparent);height:68%;border-radius:4px 4px 0 0;opacity:0.8"></div>
+      </div>
+      <p style="text-align:center;font-size:0.75rem;color:var(--text-muted)">Accuracy (orange) · Consistency (blue)</p>
+      <div style="padding:20px">
+        <div class="stat-card" style="margin-bottom:10px">
+          <div class="stat-label">Overall accuracy</div>
+          <div class="stat-value">61% <span style="color:var(--green);font-size:0.9rem">+12%</span></div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Consistency</div>
+          <div class="stat-value">68% <span style="color:var(--green);font-size:0.9rem">+8%</span></div>
+        </div>
+      </div>
+      <nav class="bottom-nav">
+        <button type="button" onclick="go('dashboard')">🏠 Dashboard</button>
+        <button type="button" onclick="go('heatmap')">🔥 Heatmap</button>
+        <button type="button" class="active">📈 Progress</button>
+      </nav>
+    </div>
+  </div>
+
+  <script>
+    // ── Config ──────────────────────────────────────────────────────────────────
+    const _API = 'http://localhost:8000';
+
+    // ── App state ───────────────────────────────────────────────────────────────
+    let _state = { file: null, jobId: null, result: null, pollTimer: null, progressTimer: null };
+
+    // ── Navigation ──────────────────────────────────────────────────────────────
+    const frame = document.getElementById("frame");
+    const screens = {
+      welcome: "screen-welcome", dashboard: "screen-dashboard", upload: "screen-upload",
+      analyzing: "screen-analyzing", session: "screen-session", heatmap: "screen-heatmap", progress: "screen-progress"
+    };
+
+    function go(name) {
+      // Stop any running poll/progress when leaving the analyzing screen
+      if (name !== 'analyzing') {
+        clearInterval(_state.pollTimer);
+        clearInterval(_state.progressTimer);
+      }
+
+      const id = screens[name];
+      if (!id) return;
+      document.querySelectorAll(".screen").forEach(s => s.classList.remove("active"));
+      document.getElementById(id).classList.add("active");
+      frame.classList.toggle("hidden-nav", name === "welcome" || name === "analyzing");
+      const bar = document.getElementById(id).querySelector(".bottom-nav");
+      if (bar) {
+        const tab = { dashboard: 0, upload: 0, session: 1, heatmap: 1, progress: 2 }[name];
+        if (tab !== undefined) {
+          Array.from(bar.querySelectorAll("button")).forEach(b => b.classList.remove("active"));
+          if (bar.children[tab]) bar.children[tab].classList.add("active");
+        }
+      }
+
+      // Screen-specific hooks
+      if (name === 'upload') {
+        _resetUploadUI();
+      }
+      if (name === 'analyzing') {
+        // Show demo button only when there is no real job running
+        const demoBtn = document.getElementById('demo-finish-btn');
+        if (demoBtn) demoBtn.style.display = _state.jobId ? 'none' : 'block';
+        _showError('analyzing-error', '');
+        document.getElementById('analyzing-retry').style.display = 'none';
+      }
+      if (name === 'session' && _state.result) {
+        _renderSession(_state.result);
+      }
+    }
+
+    // ── Upload screen ────────────────────────────────────────────────────────────
+    function _resetUploadUI() {
+      _state.file = null;
+      _state.jobId = null;
+      _state.result = null;
+      const fi = document.getElementById('file-input');
+      if (fi) fi.value = '';
+      _updateDropUI(null);
+      _showError('upload-error', '');
+      const btn = document.getElementById('upload-btn');
+      if (btn) { btn.disabled = false; btn.textContent = 'Analyze'; }
+    }
+
+    function triggerFilePick() {
+      document.getElementById('file-input').click();
+    }
+
+    function handleFileSelect(event) {
+      const file = event.target.files && event.target.files[0];
+      if (!file) return;
+      _state.file = file;
+      _updateDropUI(file);
+      _showError('upload-error', '');
+    }
+
+    function _updateDropUI(file) {
+      const drop     = document.getElementById('upload-drop');
+      const icon     = document.getElementById('upload-icon');
+      const mainText = document.getElementById('upload-main-text');
+      const subText  = document.getElementById('upload-sub-text');
+      if (file) {
+        drop.classList.add('has-file');
+        icon.textContent = '✅';
+        mainText.textContent = file.name;
+        subText.textContent = (file.size / 1024 / 1024).toFixed(1) + ' MB — tap to change';
+      } else {
+        drop.classList.remove('has-file');
+        icon.textContent = '📤';
+        mainText.textContent = 'Tap to select a video';
+        subText.textContent = 'MP4, MOV or AVI';
+      }
+    }
+
+    async function startAnalysis() {
+      if (!_state.file) {
+        _showError('upload-error', 'Please select a video file first.');
+        return;
+      }
+      const btn = document.getElementById('upload-btn');
+      btn.disabled = true;
+      btn.textContent = 'Uploading…';
+      _showError('upload-error', '');
+
+      try {
+        const form = new FormData();
+        form.append('video', _state.file);
+        const res = await fetch(_API + '/analyze', { method: 'POST', body: form });
+        if (!res.ok) throw new Error('Upload failed: HTTP ' + res.status);
+        const data = await res.json();
+
+        _state.jobId = data.job_id;
+        go('analyzing');
+        _startPolling(data.job_id);
+      } catch (e) {
+        const msg = (e instanceof TypeError && e.message === 'Failed to fetch')
+          ? 'Cannot reach backend. Make sure the backend is running: cd backend && uvicorn main:app --reload --port 8000'
+          : e.message;
+        _showError('upload-error', msg);
+        btn.disabled = false;
+        btn.textContent = 'Analyze';
+      }
+    }
+
+    // ── Analyzing / Polling ──────────────────────────────────────────────────────
+    function _startPolling(jobId) {
+      let pct = 0;
+      _setProgressBar(0);
+      clearInterval(_state.progressTimer);
+      _state.progressTimer = setInterval(function() {
+        if (pct < 88) { pct += 3; _setProgressBar(pct); }
+      }, 300);
+
+      clearInterval(_state.pollTimer);
+
+      async function poll() {
+        try {
+          const res = await fetch(_API + '/jobs/' + jobId);
+          if (!res.ok) throw new Error('Poll failed: HTTP ' + res.status);
+          const data = await res.json();
+          if (data.status === 'processing') return; // keep waiting
+
+          clearInterval(_state.pollTimer);
+          clearInterval(_state.progressTimer);
+          _setProgressBar(100);
+          _state.result = data;
+
+          if (data.status === 'completed') {
+            setTimeout(function() { go('session'); }, 600);
+          } else {
+            _showError('analyzing-error', data.error || 'Analysis failed — please try again.');
+            document.getElementById('analyzing-retry').style.display = 'block';
+          }
+        } catch (e) {
+          clearInterval(_state.pollTimer);
+          clearInterval(_state.progressTimer);
+          const msg = (e instanceof TypeError && e.message === 'Failed to fetch')
+            ? 'Lost connection to backend. Is the server still running on port 8000?'
+            : e.message;
+          _showError('analyzing-error', msg);
+          document.getElementById('analyzing-retry').style.display = 'block';
+        }
+      }
+
+      poll(); // fire once immediately, then on interval
+      _state.pollTimer = setInterval(poll, 2000);
+    }
+
+    function _setProgressBar(pct) {
+      const fill = document.getElementById('progress-bar-fill');
+      if (fill) fill.style.width = pct + '%';
+    }
+
+    // ── Session screen ───────────────────────────────────────────────────────────
+    function _weakestZone(zones) {
+      if (!zones || !zones.length) return null;
+      const withAttempts = zones.filter(function(z) { return z.attempts > 0; });
+      if (!withAttempts.length) return null;
+      return withAttempts.slice().sort(function(a, b) {
+        return a.accuracy_pct - b.accuracy_pct || b.attempts - a.attempts;
+      })[0];
+    }
+
+    function _renderSession(result) {
+      const s = result.summary;
+      const el = function(id) { return document.getElementById(id); };
+
+      el('session-shots').textContent  = s.total_shots;
+      el('session-made').textContent   = s.made;
+      el('session-missed').textContent = s.missed;
+
+      const pct = s.accuracy_pct;
+      el('session-accuracy-pct').textContent = Math.round(pct) + '%';
+      el('session-ring').style.background =
+        'conic-gradient(var(--orange) ' + pct + '%, var(--bg-card) 0)';
+
+      const weak   = _weakestZone(result.zone_aggregates);
+      const tipBox = el('session-tip');
+      if (weak) {
+        tipBox.innerHTML = '💡 <strong>Tip:</strong> Work on your <strong>' + weak.label +
+          '</strong> shots — currently at ' + Math.round(weak.accuracy_pct) +
+          '% (' + weak.made + '/' + weak.attempts + ' made).';
+        tipBox.style.display = 'block';
+      } else {
+        tipBox.style.display = 'none';
+      }
+
+      const hasCourtData = result.shot_points &&
+        result.shot_points.some(function(sp) { return sp.origin && sp.origin.court !== null; });
+      el('session-shotmap-row').style.display = hasCourtData ? 'flex' : 'none';
+    }
+
+    // ── Helpers ──────────────────────────────────────────────────────────────────
+    function _showError(elemId, msg) {
+      const el = document.getElementById(elemId);
+      if (!el) return;
+      el.textContent = msg;
+      el.style.display = msg ? 'block' : 'none';
+    }
+  </script>
+</body>
+</html>
