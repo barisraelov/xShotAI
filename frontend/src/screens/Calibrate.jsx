@@ -10,6 +10,7 @@
  * See next_steps.md step 6 for the automatic detection roadmap.
  */
 import { useEffect, useRef, useState } from 'react'
+import Logo from '../components/Logo'
 import { postAnalyze } from '../api'
 import './Calibrate.css'
 
@@ -166,7 +167,7 @@ export default function Calibrate({ navigate, file }) {
   return (
     <div className="screen-enter calibrate-screen">
       <div className="top-bar">
-        <div className="logo"><span className="logo-icon">🏀</span> xShot AI</div>
+        <Logo />
         <button className="icon-btn" onClick={() => navigate('upload')} aria-label="Cancel">✕</button>
       </div>
 

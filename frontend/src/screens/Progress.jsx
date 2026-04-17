@@ -1,10 +1,11 @@
 import BottomNav from '../components/BottomNav'
+import Logo from '../components/Logo'
 
 export default function Progress({ navigate }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <div className="logo"><span className="logo-icon">🏀</span> xShot AI</div>
+        <Logo />
         <div className="top-actions"><div className="avatar" /></div>
       </div>
 

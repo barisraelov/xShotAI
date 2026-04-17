@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
+import Logo from '../components/Logo'
 import { getJob } from '../api'
 import './Analyzing.css'
 
@@ -59,7 +60,7 @@ export default function Analyzing({ navigate, jobId, setState }) {
   return (
     <div className="screen-enter analyzing-screen">
       <div className="top-bar">
-        <div className="logo"><span className="logo-icon">🏀</span> xShot AI</div>
+        <Logo />
       </div>
 
       <div className="analyzing-center">

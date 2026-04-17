@@ -51,19 +51,34 @@ body {
 .logo {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
   font-weight: 700;
   font-size: 1.1rem;
+  letter-spacing: -0.02em;
 }
 
-.logo-icon {
+.logo-mark {
   width: 32px;
   height: 32px;
-  background: var(--orange-dim);
-  border-radius: 10px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-shrink: 0;
+  display: block;
+}
+
+.logo-wordmark {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.28em;
+}
+
+.logo-name {
+  color: var(--text);
+}
+
+.logo-suffix {
+  color: var(--text-muted);
+  font-weight: 600;
+  font-size: 0.82em;
+  letter-spacing: 0.06em;
 }
 
 .top-actions { display: flex; gap: 12px; align-items: center; }

@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 import BottomNav from '../components/BottomNav'
+import Logo from '../components/Logo'
 import { postAnalyze } from '../api'
 import './Upload.css'
 
@@ -33,7 +34,7 @@ export default function Upload({ navigate }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <div className="logo"><span className="logo-icon">🏀</span> xShot AI</div>
+        <Logo />
         <div className="top-actions"><div className="avatar" /></div>
       </div>
 

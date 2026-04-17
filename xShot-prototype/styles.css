@@ -37,11 +37,11 @@ body.has-proto-nav { padding-top: 44px; }
 .app-frame { max-width: 390px; min-height: 100vh; margin: 0 auto;
   background: linear-gradient(180deg, #121214 0%, var(--bg) 45%); padding-bottom: 88px; position: relative; }
 .top-bar { display: flex; align-items: center; justify-content: space-between; padding: 14px 18px 10px; }
-.logo { display: flex; align-items: center; gap: 8px; font-weight: 700; font-size: 1.1rem; }
-.logo-icon {
-  width: 32px; height: 32px; background: var(--orange-dim); border-radius: 10px;
-  display: flex; align-items: center; justify-content: center;
-}
+.logo { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 1.1rem; letter-spacing: -0.02em; }
+.logo-mark { width: 32px; height: 32px; flex-shrink: 0; display: block; }
+.logo-wordmark { display: inline-flex; align-items: baseline; gap: 0.28em; }
+.logo-name { color: var(--text); }
+.logo-suffix { color: var(--text-muted); font-weight: 600; font-size: 0.82em; letter-spacing: 0.06em; }
 .top-actions { display: flex; gap: 12px; align-items: center; }
 .icon-btn {
   width: 40px; height: 40px; border: none; background: var(--bg-card); border-radius: 12px;

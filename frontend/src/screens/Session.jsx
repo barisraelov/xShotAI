@@ -1,4 +1,5 @@
 import BottomNav from '../components/BottomNav'
+import Logo from '../components/Logo'
 import './Session.css'
 
 // Find the zone with the most attempts and lowest accuracy to produce a tip
@@ -29,7 +30,7 @@ export default function Session({ navigate, result }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <div className="logo"><span className="logo-icon">🏀</span> xShot AI</div>
+        <Logo />
         <button className="icon-btn" onClick={() => navigate('dashboard')}>☰</button>
       </div>
 

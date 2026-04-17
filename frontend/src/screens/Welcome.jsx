@@ -1,12 +1,11 @@
+import Logo from '../components/Logo'
 import './Welcome.css'
 
 export default function Welcome({ navigate }) {
   return (
     <div className="screen-enter welcome">
       <div className="top-bar">
-        <div className="logo">
-          <span className="logo-icon">🏀</span> xShot AI
-        </div>
+        <Logo />
       </div>
 
       <div className="welcome-hero">

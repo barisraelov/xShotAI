@@ -1,3 +1,4 @@
+import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
 import ZoneGrid from '../components/ZoneGrid'
 import BottomNav from '../components/BottomNav'
@@ -19,7 +20,7 @@ export default function Heatmap({ navigate, result }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <div className="logo"><span className="logo-icon">🏀</span> xShot AI</div>
+        <Logo />
         <button className="icon-btn" onClick={() => navigate('session')}>←</button>
       </div>
 

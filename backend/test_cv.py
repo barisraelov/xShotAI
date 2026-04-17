@@ -242,8 +242,12 @@ def main() -> int:
     print()
 
     if shot_events:
-        print("  Per-shot details (apex frame = highest point of ball trajectory):")
-        print(f"  {'Shot':>5}  {'Frame':>6}  {'Time':>6}  {'Pixel (u,v)':>14}  Result")
+        # frame_index/u/v here are the APEX (highest mid-air point) — used for
+        # debug-video marker placement.  origin.pixel in Stage 4 (AnalyzeResult)
+        # uses the trajectory-anchor baseline from OriginEstimator (Phase 2),
+        # which is the ball's position near the shot start, not the apex.
+        print("  Per-shot details (debug marker = apex; origin.pixel in Stage 4 = trajectory anchor):")
+        print(f"  {'Shot':>5}  {'Frame':>6}  {'Time':>6}  {'Apex (u,v)':>14}  Result")
         print("  " + "-" * 52)
         for i, ev in enumerate(shot_events, start=1):
             t = ev["frame_index"] / fps
@@ -279,6 +283,9 @@ def main() -> int:
       2. MAKE/MISS — Check the per-shot table above against what you know.
          "Frame" is the apex frame; divide by {fps:.0f} fps to get the timestamp,
          then scrub to that point in the video to verify.
+         Note: origin.pixel in Stage 4 (AnalyzeResult) uses a trajectory-anchor
+         baseline (ball near shot start, not apex) — this is what court-zone
+         mapping will use.
 
       3. HOOP BOX WRONG — Run with --debug-video, open the output file, and
          confirm the yellow box sits on the real rim. If not:

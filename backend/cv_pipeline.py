@@ -40,6 +40,14 @@ from typing import Optional
 import cv2
 import numpy as np
 
+from origin_estimator import OriginEstimator
+
+# Module-level singleton — lightweight, no model loading.
+# To upgrade to release+pose estimation (Phase 6), pass a ReleaseEstimator:
+#   _origin_estimator = OriginEstimator(release_estimator=MyReleaseEstimator())
+# See origin_estimator.py for the full plug-in contract.
+_origin_estimator = OriginEstimator()
+
 logger = logging.getLogger(__name__)
 
 # ── Tunables ──────────────────────────────────────────────────────────────────
@@ -537,16 +545,41 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
                     is_made, score_detail = _score(ball_pos, hoop_pos, up_frame)
                     apex = _find_apex(ball_pos, up_frame, down_frame)
                     if apex is not None:
+                        # Phase 1: capture raw trajectory data for OriginEstimator.
+                        # ball_pos at this point still contains the rolling window,
+                        # including pre-up_frame detections (ball at shooter level).
+                        # We snapshot it now before the window rolls further.
+                        ball_window = [
+                            p for p in ball_pos
+                            if up_frame <= p[2] <= down_frame
+                        ]
                         shot_events.append({
+                            # ── Legacy fields (apex) ──────────────────────────
+                            # Used ONLY by test_cv.py debug video and per-shot
+                            # table.  NOT written to AnalyzeResult.shot_points.
+                            # origin.pixel in the contract is computed by
+                            # OriginEstimator below (trajectory-anchor, Phase 2).
                             "frame_index": apex[2],
                             "u":           int(apex[0]),
                             "v":           int(apex[1]),
-                            "result":      "made" if is_made else "missed",
+                            # ── Result (shared) ───────────────────────────────
+                            "result": "made" if is_made else "missed",
+                            # ── Raw data for OriginEstimator (internal only) ───
+                            # Never propagated to the AnalyzeResult contract.
+                            # Enables trajectory-anchor origin now and the future
+                            # release+pose estimator (Phase 6) without re-running
+                            # the pipeline.
+                            "ball_points_window": ball_window,
+                            "ball_pos_snapshot":  list(ball_pos),
+                            "up_frame":           up_frame,
+                            "down_frame":         down_frame,
+                            "hoop_stable": list(hoop_pos[-1]) if hoop_pos else None,
                         })
                         logger.info(
-                            "Shot at frame %d: %s  [%s]  (up=%d  down=%d)",
+                            "Shot at frame %d: %s  [%s]  "
+                            "(up=%d  down=%d  ball_window=%d pts)",
                             apex[2], "made" if is_made else "missed",
-                            score_detail, up_frame, down_frame,
+                            score_detail, up_frame, down_frame, len(ball_window),
                         )
                 up = False
                 down = False
@@ -578,21 +611,28 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
             int(med_h),
         )
 
-    # Format as ShotPoint list per the frozen AnalyzeResult contract
+    # Format as ShotPoint list per the frozen AnalyzeResult contract.
+    #
+    # Phase 2: origin.pixel is now computed by OriginEstimator (trajectory-
+    # anchor baseline) instead of _find_apex.  Semantically: the apex is the
+    # ball's highest mid-air point — irrelevant for court position.  The
+    # trajectory anchor finds the ball near the shot start (before/at up_frame,
+    # below the hoop line), which is geometrically closest to where the shooter
+    # was standing on the court.
+    #
+    # _find_apex is still used to drive the debug-video markers in test_cv.py
+    # (stored as legacy ev["u"]/ev["v"]/ev["frame_index"]).  It is NOT used here.
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
+        origin_pixel = _origin_estimator.estimate(ev)
         shot_points.append({
             "shot_id": f"s{i:03d}",
             "result":  ev["result"],
             "origin": {
-                "pixel": {
-                    "u":           ev["u"],
-                    "v":           ev["v"],
-                    "frame_index": ev["frame_index"],
-                },
-                "court": None,
+                "pixel": origin_pixel,   # trajectory-anchor (Phase 2)
+                "court": None,           # populated by CourtMapper (Phase 3)
             },
-            "zone": None,
+            "zone": None,               # populated by ZoneClassifier (Phase 4)
         })
 
     diag: dict = {
