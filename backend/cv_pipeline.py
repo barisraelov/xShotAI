@@ -118,6 +118,60 @@ SCORE_MIN_PARABOLIC_POINTS = 3
 # Set low (5 frames ≈ 0.17s) — only rejects truly instant triggers.
 MIN_FIRST_SHOT_FRAME = 5
 
+# ── Two-gate presence check (supplementary MISS→MAKE cue) ────────────────────
+#
+# When _score() returns False (MISS), _check_two_gate_presence() looks for
+# production-accepted ball detections in two gates anchored to hoop_pos[-1]:
+#
+#   hoop_top    = hcy - 0.5 * hh
+#   hoop_bottom = hcy + 0.5 * hh
+#
+#   UPPER gate: x ∈ [hcx - 0.5*hw, hcx + 0.5*hw],  y ∈ [hoop_top - hh, hoop_top]
+#   LOWER gate: same x-range,  y ∈ [hoop_bottom, hoop_bottom + hh]
+#
+# Time window (real frame indices, matches two-gate diagnostic):
+#   fi ∈ [up_frame, down_frame + BELOW_RIM_FRAME_WINDOW]
+#
+# Upgrade MISS→MAKE iff there is at least one upper hit and one lower hit with
+# min(upper_hit.frame) < lower_hit.frame for some qualifying lower hit.
+#
+# Uses only ball_pos entries already accepted by the pipeline (same as _score).
+# NEVER called when _score() returned True — may only upgrade MISS→MAKE.
+
+# Tail past down_frame for two-gate scan (must match _diag_below_rim_gate.py).
+BELOW_RIM_FRAME_WINDOW = 15
+
+# ── Weak-hoop fallback (Session 8) ───────────────────────────────────────────
+#
+# When regular hoop signal is too sparse to sustain the state machine, the
+# pipeline attempts a second pass: it collects all hoop boxes at the lower
+# HOOP_FALLBACK_CONF_MIN confidence (captured in the same YOLO inference pass),
+# deduplicates by frame, and tests whether they share a common intersection
+# region.  If they do — indicating the model repeatedly finds the same
+# approximate rim area across many frames — the intersection centre is used as
+# a stable synthetic hoop for a state-machine replay (no extra YOLO inference).
+#
+# Static-camera assumption: the hoop never moves, so its position is the same
+# in every frame.  Per-clip visual confirmation of the consensus centre is
+# recommended before treating the result as ground truth.
+#
+# To disable completely:  set HOOP_FALLBACK_REGULAR_MIN = 0
+# To require more evidence: raise HOOP_FALLBACK_MIN_FRAMES
+
+# Min YOLO confidence for collecting weak hoop candidates.
+# NOTE: the effective floor is ultralytics' inference threshold, controlled
+# by the conf= argument passed to model().  We pass this value directly so
+# detections down to HOOP_FALLBACK_CONF_MIN are visible inside the loop.
+HOOP_FALLBACK_CONF_MIN    = 0.20
+
+# Min number of unique-frame weak boxes required to declare a valid consensus.
+HOOP_FALLBACK_MIN_FRAMES  = 5
+
+# Fallback is attempted only when regular accepted hoop frames are below this.
+# Clips with strong regular detection (e.g. clip 1: 228 frames) are never
+# affected.
+HOOP_FALLBACK_REGULAR_MIN = 10
+
 
 # ── Rolling-window helpers ────────────────────────────────────────────────────
 #
@@ -376,6 +430,88 @@ def _check_rim_crossing(predicted_cx: float, hoop_pos: list) -> bool:
     return rim_x1 < predicted_cx < rim_x2
 
 
+def _two_gate_rectangles(hcx: float, hcy: float, hw: float, hh: float):
+    """Return (upper_rect, lower_rect) as (x1,y1,x2,y2), diagnostic geometry."""
+    hoop_top = hcy - 0.5 * hh
+    hoop_bottom = hcy + 0.5 * hh
+    x1 = hcx - 0.5 * hw
+    x2 = hcx + 0.5 * hw
+    upper = (x1, hoop_top - hh, x2, hoop_top)
+    lower = (x1, hoop_bottom, x2, hoop_bottom + hh)
+    return upper, lower
+
+
+def _point_in_gate(cx: float, cy: float, gate: tuple) -> bool:
+    x1, y1, x2, y2 = gate
+    return x1 < cx < x2 and y1 < cy < y2
+
+
+def _check_two_gate_presence(
+    ball_pos: list, hoop_pos: list, up_frame: int, down_frame: int
+) -> tuple[bool, str]:
+    """
+    Supplementary two-gate presence check.  Called only when _score() returned
+    False (MISS).  Uses production ball_pos only.
+
+    Returns (upgraded: bool, detail: str) suitable for appending to score_detail.
+
+    Never downgrades MAKE → MISS (callers must only invoke when _score() False).
+    """
+    if not hoop_pos:
+        return False, "no_hoop"
+
+    hcx, hcy, _, hw, hh, _ = hoop_pos[-1]
+    upper_g, lower_g = _two_gate_rectangles(hcx, hcy, hw, hh)
+    t_hi = down_frame + BELOW_RIM_FRAME_WINDOW
+
+    upper_hits: list[tuple[int, float, float]] = []
+    lower_hits: list[tuple[int, float, float]] = []
+
+    for p in ball_pos:
+        cx, cy, fi = p[0], p[1], p[2]
+        if not (up_frame <= fi <= t_hi):
+            continue
+        if _point_in_gate(cx, cy, upper_g):
+            upper_hits.append((fi, cx, cy))
+        if _point_in_gate(cx, cy, lower_g):
+            lower_hits.append((fi, cx, cy))
+
+    gates_desc = (
+        f"upper_y=[{upper_g[1]:.0f}..{upper_g[3]:.0f}]"
+        f" lower_y=[{lower_g[1]:.0f}..{lower_g[3]:.0f}]"
+        f" win=[{up_frame}..{t_hi}]"
+    )
+
+    if not upper_hits and not lower_hits:
+        return False, f"no_hits  {gates_desc}"
+
+    if upper_hits and not lower_hits:
+        fs_u = sorted({h[0] for h in upper_hits})
+        return False, f"upper_only  frames_upper={fs_u}  {gates_desc}"
+
+    if lower_hits and not upper_hits:
+        fs_l = sorted({h[0] for h in lower_hits})
+        return False, f"lower_only  frames_lower={fs_l}  {gates_desc}"
+
+    min_upper_fi = min(h[0] for h in upper_hits)
+    lowers_after = [h for h in lower_hits if h[0] > min_upper_fi]
+    if not lowers_after:
+        fs_u = sorted({h[0] for h in upper_hits})
+        fs_l = sorted({h[0] for h in lower_hits})
+        return (
+            False,
+            f"bad_order  frames_upper={fs_u} frames_lower={fs_l}"
+            f"  {gates_desc}",
+        )
+
+    first_lower_after = min(lowers_after, key=lambda h: h[0])
+    return (
+        True,
+        f"seq  upper_min_f={min_upper_fi}"
+        f"  lower_f={first_lower_after[0]}  {gates_desc}",
+    )
+
+
 def _score(ball_pos: list, hoop_pos: list, up_frame: int) -> tuple[bool, str]:
     """
     Make/miss classification via multi-point trajectory extrapolation.
@@ -419,6 +555,170 @@ def _find_apex(ball_pos: list, up_frame: int, down_frame: int) -> Optional[tuple
     if candidates:
         return min(candidates, key=lambda p: p[1])
     return ball_pos[-1] if ball_pos else None
+
+
+# ── Weak-hoop fallback helpers ────────────────────────────────────────────────
+
+def _compute_hoop_fallback_consensus(
+    weak_hoop_raw: list,
+    min_frames: int,
+) -> Optional[tuple]:
+    """
+    Given a list of weak hoop detections collected during the main YOLO pass
+    (cx, cy, frame_idx, w, h, conf), deduplicate by frame (keep highest-conf
+    box per frame) and compute the axis-aligned intersection of all remaining
+    bounding boxes.
+
+    Returns a synthetic hoop tuple suitable for injection into hoop_pos:
+        (cx, cy, 0, side, side, HOOP_FALLBACK_CONF_MIN)
+    where (cx, cy) is the intersection centre and `side` is the average of the
+    intersection width and height, making the box square so it passes the
+    _clean_hoop_pos aspect-ratio check.
+
+    Returns None if fewer than `min_frames` unique-frame boxes exist or if the
+    intersection is empty (boxes spread across different positions in frame).
+    """
+    if not weak_hoop_raw:
+        return None
+
+    # Deduplicate: keep highest-confidence detection per frame index.
+    by_frame: dict = {}
+    for det in weak_hoop_raw:
+        cx, cy, fi, w, h, conf = det
+        if fi not in by_frame or conf > by_frame[fi][5]:
+            by_frame[fi] = det
+
+    deduped = list(by_frame.values())
+    if len(deduped) < min_frames:
+        logger.debug(
+            "Weak-hoop fallback: only %d unique-frame boxes (need >= %d)",
+            len(deduped), min_frames,
+        )
+        return None
+
+    # Compute full axis-aligned intersection of all deduplicated boxes.
+    ix1 = max(d[0] - d[3] / 2.0 for d in deduped)
+    iy1 = max(d[1] - d[4] / 2.0 for d in deduped)
+    ix2 = min(d[0] + d[3] / 2.0 for d in deduped)
+    iy2 = min(d[1] + d[4] / 2.0 for d in deduped)
+
+    if ix2 <= ix1 or iy2 <= iy1:
+        logger.debug(
+            "Weak-hoop fallback: intersection empty across %d boxes — "
+            "detections do not share a common overlap region",
+            len(deduped),
+        )
+        return None
+
+    fb_cx = (ix1 + ix2) / 2.0
+    fb_cy = (iy1 + iy2) / 2.0
+    # Synthesize a square box: average of intersection w and h so that the
+    # aspect-ratio check in _clean_hoop_pos (w/h <= HOOP_CLEAN_WH_RATIO) passes.
+    side = max(((ix2 - ix1) + (iy2 - iy1)) / 2.0, 4.0)  # floor at 4 px
+
+    logger.debug(
+        "Weak-hoop fallback: consensus at (%.1f, %.1f)  side=%.1f px  "
+        "from %d unique-frame boxes",
+        fb_cx, fb_cy, side, len(deduped),
+    )
+    return (fb_cx, fb_cy, 0, side, side, HOOP_FALLBACK_CONF_MIN)
+
+
+def _run_state_machine_with_fallback(
+    all_ball_raw: list,
+    fallback_hoop_tuple: tuple,
+    frame_count: int,
+) -> list[dict]:
+    """
+    Re-run the shot state machine over the stored ball detections from the main
+    pass, using a stable synthetic hoop position (the weak-hoop fallback
+    consensus).  No YOLO inference is performed — this is a pure state-machine
+    replay.
+
+    `all_ball_raw`: full chronological list of accepted ball detections from
+    the main pass: [(cx, cy, frame_idx, w, h, conf), ...].
+
+    The fallback hoop is held constant for the entire clip (static-camera
+    assumption).  It is fed to hoop_pos as a fresh entry at each YOLO-stride
+    frame so rolling-window eviction in the helpers never fires.
+
+    Returns shot_event dicts in the same format as the main pass.
+    """
+    from collections import defaultdict
+
+    ball_by_frame: dict = defaultdict(list)
+    for det in all_ball_raw:
+        ball_by_frame[det[2]].append(det)
+
+    fb_cx, fb_cy, _, fb_w, fb_h, fb_conf = fallback_hoop_tuple
+    # Stable single-entry hoop list — never passed through _clean_hoop_pos.
+    hoop_pos = [(fb_cx, fb_cy, 0, fb_w, fb_h, fb_conf)]
+
+    ball_pos: list      = []
+    shot_events: list   = []
+    up                  = False
+    down                = False
+    up_frame: int       = 0
+    down_frame: int     = 0
+
+    for frame_idx in range(frame_count + 1):
+        if frame_idx % FRAME_STRIDE == 0:
+            for det in ball_by_frame.get(frame_idx, []):
+                ball_pos.append(det)
+                ball_pos = _clean_ball_pos(ball_pos, frame_idx)
+
+            if ball_pos:
+                if not up and _detect_up(ball_pos, hoop_pos):
+                    up       = True
+                    up_frame = ball_pos[-1][2]
+                if up and not down and _detect_down(ball_pos, hoop_pos):
+                    down       = True
+                    down_frame = ball_pos[-1][2]
+
+        if frame_idx % ATTEMPT_CONFIRM_EVERY == 0:
+            if up and down and up_frame < down_frame:
+                if up_frame < MIN_FIRST_SHOT_FRAME:
+                    logger.info(
+                        "[fallback] Ignoring early attempt (up_frame=%d < %d)",
+                        up_frame, MIN_FIRST_SHOT_FRAME,
+                    )
+                elif down_frame - up_frame <= ATTEMPT_MAX_FRAME_GAP:
+                    is_made, score_detail = _score(ball_pos, hoop_pos, up_frame)
+                    if not is_made:
+                        tg_ok, tg_detail = _check_two_gate_presence(
+                            ball_pos, hoop_pos, up_frame, down_frame
+                        )
+                        if tg_ok:
+                            is_made = True
+                            score_detail += "  +two_gate:" + tg_detail
+                        else:
+                            score_detail += "  two_gate:" + tg_detail
+                    apex = _find_apex(ball_pos, up_frame, down_frame)
+                    if apex is not None:
+                        ball_window = [
+                            p for p in ball_pos if up_frame <= p[2] <= down_frame
+                        ]
+                        shot_events.append({
+                            "frame_index": apex[2],
+                            "u":           int(apex[0]),
+                            "v":           int(apex[1]),
+                            "result":      "made" if is_made else "missed",
+                            "ball_points_window": ball_window,
+                            "ball_pos_snapshot":  list(ball_pos),
+                            "up_frame":           up_frame,
+                            "down_frame":         down_frame,
+                            "hoop_stable":        list(hoop_pos[-1]),
+                        })
+                        logger.info(
+                            "[fallback] Shot at frame %d: %s  [%s]  "
+                            "(up=%d  down=%d  ball_window=%d pts)",
+                            apex[2], "made" if is_made else "missed",
+                            score_detail, up_frame, down_frame, len(ball_window),
+                        )
+                up   = False
+                down = False
+
+    return shot_events
 
 
 # ── Core pipeline ─────────────────────────────────────────────────────────────
@@ -468,6 +768,12 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
     hoop_pos: list = []
     all_hoop_pos: list = []  # every accepted hoop detection — for median/diagnostics
 
+    # Weak-hoop fallback accumulators (Session 8).
+    # weak_hoop_raw: hoop boxes at HOOP_FALLBACK_CONF_MIN ≤ conf < HOOP_CONF_THRESHOLD.
+    # all_ball_raw:  every accepted ball detection; used for fallback state-machine replay.
+    weak_hoop_raw: list = []
+    all_ball_raw:  list = []
+
     # Shot state machine
     up: bool       = False
     down: bool     = False
@@ -490,7 +796,9 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
             break
 
         if frame_idx % FRAME_STRIDE == 0:
-            results = model(frame, verbose=False)
+            # Run at HOOP_FALLBACK_CONF_MIN so weak hoop candidates are visible
+            # for the fallback consensus.  Per-class thresholds are applied below.
+            results = model(frame, verbose=False, conf=HOOP_FALLBACK_CONF_MIN)
 
             for r in results:
                 for box in r.boxes:
@@ -511,6 +819,7 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
                             if near:
                                 ball_near_hoop_count += 1
                             ball_pos.append((cx, cy, frame_idx, w, h, conf))
+                            all_ball_raw.append((cx, cy, frame_idx, w, h, conf))
                             ball_pos = _clean_ball_pos(ball_pos, frame_idx)
 
                     elif cls == 1:  # Basketball Hoop
@@ -520,6 +829,10 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
                             hoop_pos.append((cx, cy, frame_idx, w, h, conf))
                             hoop_pos = _clean_hoop_pos(hoop_pos)
                             all_hoop_pos.append((cx, cy, frame_idx, w, h, conf))
+                        elif conf >= HOOP_FALLBACK_CONF_MIN:
+                            # Below production threshold but above fallback minimum —
+                            # collect for consensus computation after the loop.
+                            weak_hoop_raw.append((cx, cy, frame_idx, w, h, conf))
 
             # State machine — only runs when both hoop and ball are known
             if hoop_pos and ball_pos:
@@ -543,6 +856,15 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
                     )
                 elif down_frame - up_frame <= ATTEMPT_MAX_FRAME_GAP:
                     is_made, score_detail = _score(ball_pos, hoop_pos, up_frame)
+                    if not is_made:
+                        tg_ok, tg_detail = _check_two_gate_presence(
+                            ball_pos, hoop_pos, up_frame, down_frame
+                        )
+                        if tg_ok:
+                            is_made = True
+                            score_detail += "  +two_gate:" + tg_detail
+                        else:
+                            score_detail += "  two_gate:" + tg_detail
                     apex = _find_apex(ball_pos, up_frame, down_frame)
                     if apex is not None:
                         # Phase 1: capture raw trajectory data for OriginEstimator.
@@ -587,12 +909,51 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
         frame_idx += 1
 
     cap.release()
+
+    # ── Weak-hoop fallback ────────────────────────────────────────────────────
+    # Triggered only when regular hoop detection was insufficient AND the normal
+    # pass produced no confirmed shots.  Clips with strong regular hoop signal
+    # (e.g. clip 1: 228 accepted) are never affected.
+    hoop_fallback_used = False
+    if hoop_accepted_count < HOOP_FALLBACK_REGULAR_MIN and not shot_events:
+        fb_tuple = _compute_hoop_fallback_consensus(
+            weak_hoop_raw, HOOP_FALLBACK_MIN_FRAMES
+        )
+        if fb_tuple is not None:
+            logger.info(
+                "Weak-hoop fallback activated: consensus at (%.0f, %.0f)  "
+                "size=%.0f×%.0f px  weak_frames=%d — re-running state machine",
+                fb_tuple[0], fb_tuple[1], fb_tuple[2], fb_tuple[3],
+                len({d[2] for d in weak_hoop_raw}),
+            )
+            shot_events = _run_state_machine_with_fallback(
+                all_ball_raw, fb_tuple, frame_count
+            )
+            hoop_fallback_used = True
+            # Populate all_hoop_pos from the fallback so stable_hoop and the
+            # debug video reflect the consensus hoop position.
+            if not all_hoop_pos:
+                fb_cx, fb_cy, _, fb_w, fb_h, _ = fb_tuple
+                all_hoop_pos = [(fb_cx, fb_cy, 0, fb_w, fb_h, HOOP_FALLBACK_CONF_MIN)]
+            logger.info(
+                "Weak-hoop fallback: %d shot(s) confirmed via consensus hoop",
+                len(shot_events),
+            )
+        else:
+            logger.info(
+                "Weak-hoop fallback: not triggered — consensus could not be computed "
+                "(%d unique-frame weak boxes, need >= %d with overlapping bboxes)",
+                len({d[2] for d in weak_hoop_raw}),
+                HOOP_FALLBACK_MIN_FRAMES,
+            )
+
     logger.info(
         "Pipeline complete.  Ball %d/%d accepted  "
-        "Hoop %d/%d accepted  Shots detected: %d",
+        "Hoop %d/%d accepted  Shots detected: %d%s",
         ball_accepted_count, ball_raw_count,
         hoop_accepted_count, hoop_raw_count,
         len(shot_events),
+        "  [fallback hoop]" if hoop_fallback_used else "",
     )
 
     # Canonical hoop position — median of all accepted detections.
