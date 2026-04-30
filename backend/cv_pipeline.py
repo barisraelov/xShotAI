@@ -41,12 +41,7 @@ import cv2
 import numpy as np
 
 from origin_estimator import OriginEstimator
-
-# Module-level singleton — lightweight, no model loading.
-# To upgrade to release+pose estimation (Phase 6), pass a ReleaseEstimator:
-#   _origin_estimator = OriginEstimator(release_estimator=MyReleaseEstimator())
-# See origin_estimator.py for the full plug-in contract.
-_origin_estimator = OriginEstimator()
+from release_estimator import ReleaseEstimator
 
 logger = logging.getLogger(__name__)
 
@@ -117,6 +112,21 @@ SCORE_MIN_PARABOLIC_POINTS = 3
 # Prevents false triggers when the video starts mid-shot.
 # Set low (5 frames ≈ 0.17s) — only rejects truly instant triggers.
 MIN_FIRST_SHOT_FRAME = 5
+
+# Module-level singleton.
+# ReleaseEstimator runs bounded per-shot frame checks only after shot confirmation.
+_origin_estimator = OriginEstimator(
+    release_estimator=ReleaseEstimator(
+        ball_model_path=Path(__file__).parent / YOLO_MODEL_PATH,
+        person_model_path=Path(__file__).parent / "yolov8n.pt",
+        ball_conf_min=BALL_CONF_THRESHOLD,
+        person_conf_min=0.25,
+        backward_step=25,
+        forward_step=5,
+        backward_max_delta=200,
+        forward_post_up_cap=5,
+    )
+)
 
 # ── Two-gate presence check (supplementary MISS→MAKE cue) ────────────────────
 #
@@ -983,6 +993,10 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
     #
     # _find_apex is still used to drive the debug-video markers in test_cv.py
     # (stored as legacy ev["u"]/ev["v"]/ev["frame_index"]).  It is NOT used here.
+    # Internal-only context for OriginEstimator plug-ins (e.g., ReleaseEstimator).
+    for ev in shot_events:
+        ev["_video_path"] = str(path)
+
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
         origin_pixel = _origin_estimator.estimate(ev)
