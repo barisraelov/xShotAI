@@ -302,7 +302,7 @@ Decoupled free-scan outputs under `backend/test_videos/output/<N>_free_scan/` re
 | Phase 3: `CourtMapper` (homography, `origin.court`) | **NOT started** |
 | Phase 4: `ZoneClassifier` (polygon hit-test, `zone`) | **NOT started** |
 | Phase 5: wire Phases 3+4 into pipeline | **NOT started** |
-| Phase 6: `ReleaseEstimator` plugin | **NOT started — future optional upgrade** |
+| Phase 6: `ReleaseEstimator` plugin | **Integrated baseline** — step-search person-bbox logic wired via `OriginEstimator` plugin; unresolved falls back to trajectory-anchor |
 
 ### Current focus — object-detection improvement (before CourtMapper)
 
@@ -422,9 +422,10 @@ Validate on real footage. Unlocks: Heatmap screen, Session zone tip.
 
 ---
 
-### FUTURE — Phase 6: `ReleaseEstimator` plugin (optional upgrade)
+### Phase 6 — `ReleaseEstimator` plugin (integrated baseline, future refinement)
 
-Improves `origin.pixel` accuracy using pose / hand-ball proximity.
+Baseline release-step logic is integrated (person-bbox contact/exit search).  
+Future improvements still target pose / hand-ball proximity refinement.  
 See Section 17.5 for plug-in contract. Not required for Phases 3–5.
 
 ---
@@ -661,8 +662,8 @@ Video
                                                                              │
   ┌──────────────────────────────────────────────────────────────────────────┘
   └─ OriginEstimator.estimate(shot_event)
-       ├─ [optional] ReleaseEstimator plugin (Phase 6 — not yet implemented)
-       └─ Trajectory-anchor baseline (default)
+       ├─ ReleaseEstimator plugin (Phase 6 baseline integrated)
+       └─ Trajectory-anchor baseline fallback (when release unresolved/low-confidence)
             └─ origin.pixel  ──→  CourtMapper (Phase 3)
                                        └─ origin.court  ──→  ZoneClassifier (Phase 4)
                                                                   └─ zone, zone_aggregates
@@ -682,7 +683,7 @@ Video
 | Phase 3: `CourtMapper` (homography) | Pending |
 | Phase 4: `ZoneClassifier` (polygon hit-test) | Pending |
 | Phase 5: wire phases 3+4 into pipeline | Pending |
-| Phase 6: `ReleaseEstimator` plugin | Future |
+| Phase 6: `ReleaseEstimator` plugin | **Integrated baseline** (step-search person-bbox), future pose-based refinement |
 
 ### 17.5 Future Phase 6 Plug-in Contract
 
@@ -1116,10 +1117,43 @@ When **more than one** hoop is visible:
   - **Possible weak fallback (future):** `2–4` weak detections accepted only with extra evidence (e.g., ball trajectory moving toward the same candidate hoop area).
 - Revisit clip-3-focused ball improvements only if the same failure repeats on better-quality footage.
 
-**Next investigation (not implemented yet):**
-- **Release moment / shot-release detection:** new **`_diag_*.py` module first**, isolate wrist–ball proximity / separation over time — **no production wiring** until validated (aligned with Section 9 checkpoint).
+**Next investigation (current):**
+- **Release moment / shot-release refinement:** production baseline is now integrated via bounded per-shot person-bbox step-search (Section 18.10.11). Next work is confidence/refinement diagnostics (especially unresolved cases) without changing `_score()`/make-miss.
 
 **Supplementary make/miss cue — fixed two-gate:** Rules, geometry, and production checkpoint are documented under **Section 9**. `_score()` stays primary; two-gate is MISS→MAKE supplementary only.
+
+#### 18.10.11 Release-moment implementation checkpoint (current)
+
+**Status update (implemented):**
+- The validated release-step behavior from `backend/test_videos/output/1_release_step_diag/` is now integrated through the `OriginEstimator` plug-in path.
+- Production wiring point: `backend/release_estimator.py` (new) injected by `backend/cv_pipeline.py` into `OriginEstimator(release_estimator=...)`.
+- `_score()`/make-miss/state-machine loop/`AnalyzeResult`/frontend remain unchanged.
+
+**Why this change was required:**
+- The previous release diagnostic frequently selected `physical_release_candidate` too close to `up_frame` (already near airborne UP→DOWN trajectory), which was too late for physical-release semantics.
+
+**Integrated algorithm (source-of-truth behavior):**
+1. Start at `up_frame` (already confirmed shot event).
+2. Jump backward by `25` frames each step: `up`, `up-25`, `up-50`, ...
+3. At each backward step, detect ball (`best.pt`) and person (`yolov8n.pt`) and check contact:
+   - ball center inside shooter person bbox, OR
+   - ball bbox overlaps shooter person bbox.
+4. Stop backward search at first contact frame.
+5. From that contact frame, jump forward by `5` frames each step.
+6. First forward step where ball is no longer inside/overlapping shooter bbox is selected `release_frame` (`physical_release_candidate.frame_index`).
+7. Emit release window: `[release_frame - 12, release_frame + 5]`.
+
+**Model / runtime boundaries:**
+- Ball detector: `best.pt` (class `0`).
+- Person detector: `yolov8n.pt` (COCO person class `0`).
+- Person detection is run only on bounded per-shot candidate frames (not in the main per-frame state-machine loop).
+
+**Separation of responsibilities (locked):**
+- **Person bbox cue (implemented baseline):** coarse but stable release-area/contact-exit timing.
+- **Pose/keypoint cue (future refinement):** wrist/hand-ball separation and form/coaching-quality signals.
+
+**Carry-forward reliability rule:**
+- If evidence is insufficient, do not force a fake near-`up_frame` release; return unresolved/low-confidence fallback behavior rather than a misleading late release.
 
 ### 18.5 Locked Constraints (Carry Forward)
 
