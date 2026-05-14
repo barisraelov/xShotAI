@@ -10,7 +10,6 @@ const isFail = new URLSearchParams(window.location.search).get('fail') === '1'
 export default function Upload({ navigate }) {
   const fileRef = useRef(null)
   const [file, setFile] = useState(null)
-  const [uploading, setUploading] = useState(false)
   const [err, setErr] = useState(null)
 
   function handleFile(e) {
@@ -20,15 +19,20 @@ export default function Upload({ navigate }) {
 
   async function handleContinue() {
     if (!file) { setErr('Please select a video file first.'); return }
-    setUploading(true)
-    setErr(null)
-    try {
-      const { job_id } = await postAnalyze(file, null, isFail)
-      navigate('analyzing', { jobId: job_id, result: null, error: null })
-    } catch (e) {
-      setErr(e.message)
-      setUploading(false)
+
+    // Fail-test mode bypasses calibration and goes straight to analyzing.
+    if (isFail) {
+      try {
+        const { job_id } = await postAnalyze(file, null, true)
+        navigate('analyzing', { jobId: job_id, result: null, error: null, file: null })
+      } catch (e) {
+        setErr(e.message)
+      }
+      return
     }
+
+    // Normal path: go to calibration screen (file is held in app state).
+    navigate('calibrate', { file })
   }
 
   return (
@@ -70,9 +74,9 @@ export default function Upload({ navigate }) {
       <div className="req-list">
         <h3>Requirements</h3>
         <ul>
-          <li>Camera facing the hoop (elevated / diagonal angle)</li>
-          <li>60 fps recommended</li>
+          <li>Camera facing the hoop from the sideline (with some elevation)</li>
           <li>Static camera — no panning</li>
+          <li>Some court lines visible for calibration</li>
         </ul>
       </div>
 
@@ -82,9 +86,8 @@ export default function Upload({ navigate }) {
         <button
           className="btn btn-primary"
           onClick={handleContinue}
-          disabled={uploading}
         >
-          {uploading ? 'Uploading…' : isFail ? 'Analyze (fail test)' : 'Analyze'}
+          {isFail ? 'Analyze (fail test)' : 'Continue →'}
         </button>
       </div>
 

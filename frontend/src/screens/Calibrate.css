@@ -76,6 +76,19 @@
   100% { background-position: -200% 0; }
 }
 
+/* ── Court guide ── */
+.calibrate-guide-row {
+  padding: 4px 20px 6px;
+  display: flex;
+  justify-content: center;
+}
+
+.court-guide-svg {
+  width: 120px;
+  height: 80px;
+  flex-shrink: 0;
+}
+
 /* ── Action rows ── */
 .calibrate-row {
   display: flex;
