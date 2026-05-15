@@ -741,39 +741,46 @@ def _detect_player_feet(
 ) -> tuple[Optional[int], Optional[int]]:
     """
     Return the (u, v) pixel of the largest detected person's feet
-    in the frame just before up_frame.  Feet = bottom-centre of the
+    in a window of frames before up_frame.  Feet = bottom-centre of the
     person bounding box, which lies on the court floor — unlike the
     ball (chest height), which cannot be accurately mapped through
     a floor-plane homography.
+
+    Scans every 3rd frame in [up_frame-30, up_frame-3] and returns the
+    detection with the largest bounding-box area across all sampled frames.
+    This is more robust than a single-frame lookup, which can miss the person
+    if YOLO has a transient detection gap.
 
     Returns (None, None) if no person is detected or the model is absent.
     """
     if person_model is None:
         return None, None
 
-    # Seek a few frames before up_frame so the player is still set up.
-    seek_frame = max(0, up_frame - 8)
     cap = cv2.VideoCapture(video_path)
     if not cap.isOpened():
         return None, None
-    cap.set(cv2.CAP_PROP_POS_FRAMES, seek_frame)
-    ok, frame = cap.read()
-    cap.release()
-    if not ok:
-        return None, None
 
-    results = person_model(frame, verbose=False, conf=0.30, classes=[0])
     best_area = 0
     foot_u, foot_v = None, None
-    for r in results:
-        for box in r.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            area = (x2 - x1) * (y2 - y1)
-            if area > best_area:
-                best_area = area
-                foot_u = int((x1 + x2) / 2)
-                foot_v = int(y2)   # bottom of bbox ≈ feet on floor
+    start = max(0, up_frame - 30)
+    end   = max(0, up_frame - 3)
 
+    for seek in range(start, end + 1, 3):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, seek)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        results = person_model(frame, verbose=False, conf=0.30, classes=[0])
+        for r in results:
+            for box in r.boxes:
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                area = (x2 - x1) * (y2 - y1)
+                if area > best_area:
+                    best_area = area
+                    foot_u = int((x1 + x2) / 2)
+                    foot_v = int(y2)   # bottom of bbox ≈ feet on floor
+
+    cap.release()
     return foot_u, foot_v
 
 
@@ -1068,15 +1075,24 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
             floor_u, floor_v = _detect_player_feet(
                 ev["_video_path"], ev["up_frame"], _person_model
             )
+            using_ball_pixel = False
             if floor_u is not None:
                 logger.info("Shot s%03d feet pixel = (%d, %d)", i, floor_u, floor_v)
             elif origin_pixel is not None:
                 floor_u = origin_pixel.get("u")
                 floor_v = origin_pixel.get("v")
+                using_ball_pixel = True
                 logger.info("Shot s%03d no person found — using ball pixel (%s, %s)", i, floor_u, floor_v)
 
             if floor_u is not None and floor_v is not None:
-                court, zone = court_mapper.map_shot(floor_u, floor_v)
+                # When ball pixel is used, it is aerial (not on the floor), so the
+                # floor-plane homography gives an unreliable x-coordinate.  Pass the
+                # hoop's pixel x as a reference so classify_zone can determine
+                # left/right by direct pixel comparison instead of via homography.
+                hoop = ev.get("hoop_stable")
+                hoop_cx = int(hoop[0]) if hoop else None
+                pixel_side_ref = (floor_u, hoop_cx) if using_ball_pixel and hoop_cx is not None else None
+                court, zone = court_mapper.map_shot(floor_u, floor_v, pixel_side_ref=pixel_side_ref)
                 logger.info("Shot s%03d court = %s  zone = %s", i, court, zone)
 
         shot_points.append({

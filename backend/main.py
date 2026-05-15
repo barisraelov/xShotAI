@@ -140,7 +140,7 @@ async def _process_video_task(
             cv_pipeline.process_video, tmp_path, court_mapper
         )
 
-        homography_list = court_mapper.homography_as_list() if court_mapper else None
+        homography_list = court_mapper.homography_matrix if court_mapper else None
         _jobs[job_id]["status"] = "completed"
         _jobs[job_id]["result"] = _build_real_result(job_id, shot_points, homography_list)
         logger.info("Job %s: completed — %d shots detected", job_id, len(shot_points))
