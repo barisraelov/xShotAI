@@ -4,7 +4,6 @@ import './index.css'
 import Welcome   from './screens/Welcome'
 import Dashboard from './screens/Dashboard'
 import Upload    from './screens/Upload'
-import Calibrate from './screens/Calibrate'
 import Analyzing from './screens/Analyzing'
 import Session   from './screens/Session'
 import Heatmap   from './screens/Heatmap'
@@ -50,7 +49,6 @@ const INITIAL_STATE = {
   jobId:  demoView() ? 'demo' : null,
   result: demoView() ? DEMO_STUB : null,
   error:  null,
-  file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
 }
 
 export default function App() {
@@ -60,14 +58,13 @@ export default function App() {
     setState(s => ({ ...s, view, ...patch }))
   }
 
-  const noNav = state.view === 'welcome' || state.view === 'analyzing' || state.view === 'calibrate'
+  const noNav = state.view === 'welcome' || state.view === 'analyzing'
 
   const screenProps = {
     navigate,
     jobId:  state.jobId,
     result: state.result,
     error:  state.error,
-    file:   state.file,
   }
 
   return (
@@ -75,7 +72,6 @@ export default function App() {
       {state.view === 'welcome'   && <Welcome   {...screenProps} />}
       {state.view === 'dashboard' && <Dashboard {...screenProps} />}
       {state.view === 'upload'    && <Upload    {...screenProps} />}
-      {state.view === 'calibrate' && <Calibrate {...screenProps} />}
       {state.view === 'analyzing' && <Analyzing {...screenProps} setState={setState} />}
       {state.view === 'session'   && <Session   {...screenProps} />}
       {state.view === 'heatmap'   && <Heatmap   {...screenProps} />}

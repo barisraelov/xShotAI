@@ -42,7 +42,6 @@ import numpy as np
 
 from origin_estimator import OriginEstimator
 from release_estimator import ReleaseEstimator
-from court_mapper import CourtMapper
 
 logger = logging.getLogger(__name__)
 
@@ -732,54 +731,9 @@ def _run_state_machine_with_fallback(
     return shot_events
 
 
-# ── Floor-origin helper ───────────────────────────────────────────────────────
-
-def _detect_player_feet(
-    video_path: str,
-    up_frame: int,
-    person_model,
-) -> tuple[Optional[int], Optional[int]]:
-    """
-    Return the (u, v) pixel of the largest detected person's feet
-    in the frame just before up_frame.  Feet = bottom-centre of the
-    person bounding box, which lies on the court floor — unlike the
-    ball (chest height), which cannot be accurately mapped through
-    a floor-plane homography.
-
-    Returns (None, None) if no person is detected or the model is absent.
-    """
-    if person_model is None:
-        return None, None
-
-    # Seek a few frames before up_frame so the player is still set up.
-    seek_frame = max(0, up_frame - 8)
-    cap = cv2.VideoCapture(video_path)
-    if not cap.isOpened():
-        return None, None
-    cap.set(cv2.CAP_PROP_POS_FRAMES, seek_frame)
-    ok, frame = cap.read()
-    cap.release()
-    if not ok:
-        return None, None
-
-    results = person_model(frame, verbose=False, conf=0.30, classes=[0])
-    best_area = 0
-    foot_u, foot_v = None, None
-    for r in results:
-        for box in r.boxes:
-            x1, y1, x2, y2 = box.xyxy[0].tolist()
-            area = (x2 - x1) * (y2 - y1)
-            if area > best_area:
-                best_area = area
-                foot_u = int((x1 + x2) / 2)
-                foot_v = int(y2)   # bottom of bbox ≈ feet on floor
-
-    return foot_u, foot_v
-
-
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
-def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = None) -> tuple[list[dict], dict]:
+def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
     """
     Single-pass pipeline: process video frame by frame, maintaining rolling
     state for hoop and ball positions, running the shot state machine, and
@@ -1043,50 +997,17 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
     for ev in shot_events:
         ev["_video_path"] = str(path)
 
-    # Load the person-detection model once if we need floor-position correction.
-    # yolov8n.pt (COCO) detects persons (class 0) whose feet are on the floor —
-    # unlike origin.pixel which tracks the ball in the air and can't be mapped
-    # through a floor-plane homography correctly.
-    _person_model = None
-    if court_mapper is not None:
-        person_model_path = Path(__file__).parent / "yolov8n.pt"
-        if person_model_path.exists():
-            from ultralytics import YOLO as _YOLO
-            _person_model = _YOLO(str(person_model_path))
-            logger.info("Loaded person model for floor-origin detection")
-        else:
-            logger.warning("yolov8n.pt not found — falling back to ball pixel for court mapping")
-
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
         origin_pixel = _origin_estimator.estimate(ev)
-
-        court = None
-        zone  = None
-        if court_mapper is not None:
-            # Prefer feet position (on the floor) over ball position (in the air).
-            floor_u, floor_v = _detect_player_feet(
-                ev["_video_path"], ev["up_frame"], _person_model
-            )
-            if floor_u is not None:
-                logger.info("Shot s%03d feet pixel = (%d, %d)", i, floor_u, floor_v)
-            elif origin_pixel is not None:
-                floor_u = origin_pixel.get("u")
-                floor_v = origin_pixel.get("v")
-                logger.info("Shot s%03d no person found — using ball pixel (%s, %s)", i, floor_u, floor_v)
-
-            if floor_u is not None and floor_v is not None:
-                court, zone = court_mapper.map_shot(floor_u, floor_v)
-                logger.info("Shot s%03d court = %s  zone = %s", i, court, zone)
-
         shot_points.append({
             "shot_id": f"s{i:03d}",
             "result":  ev["result"],
             "origin": {
-                "pixel": origin_pixel,
-                "court": court,
+                "pixel": origin_pixel,   # trajectory-anchor (Phase 2)
+                "court": None,           # populated by CourtMapper (Phase 3)
             },
-            "zone": zone,
+            "zone": None,               # populated by ZoneClassifier (Phase 4)
         })
 
     diag: dict = {
@@ -1108,25 +1029,29 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def process_video(
-    video_path: str,
-    court_mapper: Optional[CourtMapper] = None,
-) -> list[dict]:
+def process_video(video_path: str) -> list[dict]:
     """
     Analyse a basketball training video and return a list of ShotPoint dicts
-    conforming to the frozen AnalyzeResult contract.
+    conforming to the frozen AnalyzeResult contract:
 
-    If court_mapper is provided (built from user calibration), origin.court
-    and zone are populated for each shot; otherwise they remain None.
+        {
+            "shot_id":  "s001",
+            "result":   "made" | "missed",
+            "origin": {
+                "pixel":  {"u": int, "v": int, "frame_index": int},
+                "court":  None,   # not computed — requires court detection (step 6)
+            },
+            "zone": None,         # not computed — requires origin.court
+        }
 
     Raises RuntimeError on unrecoverable errors (missing model, corrupt file).
     Returns an empty list if the video is valid but no shots were detected.
     """
-    shot_points, _ = _run_pipeline_inner(video_path, court_mapper)
+    shot_points, _ = _run_pipeline_inner(video_path)
     return shot_points
 
 
-def _run_pipeline_verbose(video_path: str, court_mapper: Optional[CourtMapper] = None) -> dict:
+def _run_pipeline_verbose(video_path: str) -> dict:
     """
     Run the full pipeline and return detailed diagnostic data.
     Used by test_cv.py. Not part of the public API contract.
@@ -1137,5 +1062,5 @@ def _run_pipeline_verbose(video_path: str, court_mapper: Optional[CourtMapper] =
       ball_near_hoop_count, shot_events, fps, frame_count,
       frame_height, shot_points
     """
-    shot_points, diag = _run_pipeline_inner(video_path, court_mapper)
+    shot_points, diag = _run_pipeline_inner(video_path)
     return {**diag, "shot_points": shot_points}

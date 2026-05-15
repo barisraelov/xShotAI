@@ -1,30 +1,23 @@
 import './CourtMap.css'
 
-const ZONES = [
-  { id: 'three_left',  label: '3pt Left',  svgCx: 22, svgCy: 24 },
-  { id: 'three_right', label: '3pt Right', svgCx: 78, svgCy: 24 },
-  { id: 'two_left',    label: '2pt Left',  svgCx: 29, svgCy: 44 },
-  { id: 'two_right',   label: '2pt Right', svgCx: 71, svgCy: 44 },
-]
-
-// Zone fill paths (viewBox "0 0 100 60", hoop at cx=50 cy=52)
-// Arc midpoint at t=0.5: (50, 22). Left half: Q33,22 → (50,22). Right half: Q67,22 → (84,38).
-const ZONE_PATHS = {
-  three_left:  'M 4 56 L 4 4 L 50 4 L 50 22 Q 33 22 16 38 L 16 56 Z',
-  three_right: 'M 96 56 L 96 4 L 50 4 L 50 22 Q 67 22 84 38 L 84 56 Z',
-  two_left:    'M 50 56 L 16 56 L 16 38 Q 33 22 50 22 Z',
-  two_right:   'M 50 56 L 84 56 L 84 38 Q 67 22 50 22 Z',
+/**
+ * Maps normalized court coords (x: 0–1, y: 0–1 where y=0 is near hoop)
+ * to CSS percentage positions within the court div.
+ *
+ * SVG viewBox is 100×60. Hoop sits at SVG y≈52; far end at SVG y≈4.
+ * Court x spans SVG x=4 (left) to x=96 (right).
+ */
+function courtToCSS(x, y) {
+  const cssLeft = 4 + x * 92           // maps 0→4%, 1→96% of viewBox width 100
+  const cssvTop = 52 - y * 48          // maps y=0→SVG52, y=1→SVG4 (hoop at bottom)
+  return {
+    left: `${cssLeft}%`,
+    top:  `${(cssvTop / 60) * 100}%`,
+  }
 }
 
-function zoneColor(accuracy, attempts) {
-  if (!attempts) return 'rgba(255,255,255,0.04)'
-  if (accuracy >= 60) return 'rgba(52, 211, 153, 0.22)'
-  if (accuracy >= 35) return 'rgba(251, 191, 36, 0.18)'
-  return 'rgba(248, 113, 113, 0.20)'
-}
-
-export default function CourtMap({ zoneAggregates }) {
-  const byId = Object.fromEntries((zoneAggregates ?? []).map(z => [z.polygon_id, z]))
+export default function CourtMap({ shotPoints }) {
+  const plottable = (shotPoints ?? []).filter(s => s.origin?.court !== null)
 
   return (
     <div className="court-container">
@@ -34,64 +27,51 @@ export default function CourtMap({ zoneAggregates }) {
         preserveAspectRatio="none"
         aria-hidden="true"
       >
-        {/* Zone fills */}
-        {ZONES.map(z => {
-          const agg = byId[z.id]
-          return (
-            <path
-              key={z.id}
-              d={ZONE_PATHS[z.id]}
-              fill={zoneColor(agg?.accuracy_pct, agg?.attempts)}
-              stroke="none"
-            />
-          )
-        })}
-
-        {/* Court lines on top */}
+        <defs>
+          <linearGradient id="courtLine" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0" stopColor="rgba(255,255,255,0.22)" />
+            <stop offset="1" stopColor="rgba(255,255,255,0.12)" />
+          </linearGradient>
+        </defs>
+        {/* Outer boundary */}
         <rect x="4" y="4" width="92" height="52" rx="6"
-          fill="none" stroke="rgba(255,255,255,0.20)" strokeWidth="0.8" />
-        <line x1="50" y1="4" x2="50" y2="56"
-          stroke="rgba(255,255,255,0.10)" strokeWidth="0.6" strokeDasharray="2,2" />
+          fill="none" stroke="url(#courtLine)" strokeWidth="0.8" />
+        {/* Paint / 3-second area */}
         <rect x="34" y="30" width="32" height="22" rx="2.5"
           fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.8" />
+        {/* Free throw arc */}
         <path d="M34 30 Q50 16 66 30"
           fill="none" stroke="rgba(255,255,255,0.14)" strokeWidth="0.8" />
+        {/* Restricted area arc */}
         <path d="M42 52 Q50 44 58 52"
           fill="none" stroke="rgba(255,255,255,0.16)" strokeWidth="0.8" />
+        {/* Backboard */}
         <rect x="47.5" y="50" width="5" height="0.8" rx="0.4"
           fill="rgba(255,255,255,0.22)" />
+        {/* Hoop circle */}
         <circle cx="50" cy="52" r="1.6"
           fill="none" stroke="rgba(255,255,255,0.26)" strokeWidth="0.8" />
-        <path d="M16 56 V38" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.8" />
-        <path d="M84 56 V38" fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.8" />
+        {/* Three-point line: corners */}
+        <path d="M16 56 V38" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" />
+        <path d="M84 56 V38" fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" />
+        {/* Three-point arc */}
         <path d="M16 38 Q50 6 84 38"
-          fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.8" />
-
-        {/* Zone stats labels */}
-        {ZONES.map(z => {
-          const agg = byId[z.id]
-          if (!agg?.attempts) return (
-            <text key={z.id} x={z.svgCx} y={z.svgCy}
-              textAnchor="middle" fontSize="3.8" fill="rgba(255,255,255,0.30)">
-              —
-            </text>
-          )
-          return (
-            <g key={z.id}>
-              <text x={z.svgCx} y={z.svgCy - 2}
-                textAnchor="middle" fontSize="4.2" fontWeight="bold"
-                fill="rgba(255,255,255,0.90)">
-                {agg.accuracy_pct.toFixed(0)}%
-              </text>
-              <text x={z.svgCx} y={z.svgCy + 3}
-                textAnchor="middle" fontSize="3.2"
-                fill="rgba(255,255,255,0.55)">
-                {agg.made}/{agg.attempts}
-              </text>
-            </g>
-          )
-        })}
+          fill="none" stroke="rgba(255,255,255,0.10)" strokeWidth="0.8" />
       </svg>
+
+      {plottable.map(shot => {
+        const { x, y } = shot.origin.court
+        const pos = courtToCSS(x, y)
+        const made = shot.result === 'made'
+        return (
+          <span
+            key={shot.shot_id}
+            className={`shot-dot ${made ? 'dot-made' : 'dot-missed'}`}
+            style={pos}
+            title={`${shot.shot_id}: ${shot.result}${shot.zone ? ` · ${shot.zone.label}` : ''}`}
+          />
+        )
+      })}
     </div>
   )
 }

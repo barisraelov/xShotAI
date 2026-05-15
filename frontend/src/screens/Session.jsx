@@ -12,18 +12,6 @@ function weakestZone(zoneAggregates) {
   )[0]
 }
 
-// Derive 2pt / 3pt stats directly from shot_points zone data
-function zoneBreakdown(shotPoints) {
-  if (!shotPoints?.some(s => s.zone)) return null
-  const twos   = shotPoints.filter(s => s.zone?.range_class === 'two_point')
-  const threes = shotPoints.filter(s => s.zone?.range_class === 'three_point')
-  const calc   = arr => ({
-    attempts: arr.length,
-    made:     arr.filter(s => s.result === 'made').length,
-  })
-  return { twos: calc(twos), threes: calc(threes) }
-}
-
 export default function Session({ navigate, result }) {
   if (!result) {
     return (
@@ -35,9 +23,8 @@ export default function Session({ navigate, result }) {
   }
 
   const { summary, zone_aggregates, shot_points } = result
-  const weak         = weakestZone(zone_aggregates)
-  const breakdown    = zoneBreakdown(shot_points)
-  const accuracyDeg  = `${(summary.accuracy_pct / 100 * 360).toFixed(1)}deg`
+  const weak = weakestZone(zone_aggregates)
+  const accuracyDeg = `${(summary.accuracy_pct / 100 * 360).toFixed(1)}deg`
   const hasCourtData = shot_points?.some(s => s.origin?.court !== null)
 
   return (
@@ -80,40 +67,10 @@ export default function Session({ navigate, result }) {
         </div>
       )}
 
-      {breakdown && (
-        <div className="zone-breakdown">
-          <div className="zone-breakdown-title">Shot breakdown</div>
-          <div className="zone-breakdown-row">
-            <div className="zone-card">
-              <div className="zone-card-label">2-point</div>
-              <div className="zone-card-stat">
-                {breakdown.twos.made}<span className="zone-card-denom">/{breakdown.twos.attempts}</span>
-              </div>
-              <div className="zone-card-pct">
-                {breakdown.twos.attempts > 0
-                  ? `${Math.round(breakdown.twos.made / breakdown.twos.attempts * 100)}%`
-                  : '—'}
-              </div>
-            </div>
-            <div className="zone-card">
-              <div className="zone-card-label">3-point</div>
-              <div className="zone-card-stat">
-                {breakdown.threes.made}<span className="zone-card-denom">/{breakdown.threes.attempts}</span>
-              </div>
-              <div className="zone-card-pct">
-                {breakdown.threes.attempts > 0
-                  ? `${Math.round(breakdown.threes.made / breakdown.threes.attempts * 100)}%`
-                  : '—'}
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
-
       {hasCourtData && (
         <div style={{ display: 'flex', gap: '10px', padding: '0 20px 24px', flexWrap: 'wrap' }}>
           <button className="btn" onClick={() => navigate('heatmap')} style={{ flex: 1 }}>
-            Shot map
+            🔥 Shot map
           </button>
         </div>
       )}
