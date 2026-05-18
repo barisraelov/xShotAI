@@ -29,6 +29,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import cv_pipeline
+from feedback import generate_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -50,7 +51,7 @@ def _build_real_result(job_id: str, shot_points: list[dict]) -> dict:
     missed = total - made
     accuracy = round(made / total * 100, 2) if total > 0 else 0.0
 
-    return {
+    out = {
         "job_id": job_id,
         "status": "completed",
         "summary": {
@@ -68,6 +69,8 @@ def _build_real_result(job_id: str, shot_points: list[dict]) -> dict:
             "homography_matrix":  None,
         },
     }
+    out["feedback"] = generate_feedback(out)
+    return out
 
 
 # ── Background tasks ───────────────────────────────────────────────────────────
