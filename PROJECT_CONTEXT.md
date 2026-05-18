@@ -451,6 +451,8 @@ Decoupled free-scan outputs under `backend/test_videos/output/<N>_free_scan/` re
 | `_diag_free_scan.py` (decoupled diagnostics) | **Done** — added and run on clips 1–6 |
 | Weak-hoop fallback (`cv_pipeline.py`) | **Integrated (Session 8)** — see Section 18.10.2 |
 | Fixed two-gate presence cue | **Specified + Clip 6 diagnostic** — see checkpoint above; not production-wired |
+| **Feedback module (`backend/feedback.py`)** | **Done (current session)** — rule-based session analysis; see Section 19 |
+| **`trajectory` field in `shot_points`** | **Done (current session)** — `arc_height_px`, `apex_pixel`, `up_frame`, `down_frame` added to every shot_point; feeds feedback arc/timing insights |
 | Phase 3: `CourtMapper` (homography, `origin.court`) | **NOT started** |
 | Phase 4: `ZoneClassifier` (polygon hit-test, `zone`) | **NOT started** |
 | Phase 5: wire Phases 3+4 into pipeline | **NOT started** |
@@ -1344,3 +1346,66 @@ A new Cursor chat can continue this work by:
 - `<N>_free_scan/free_scan_report.txt` — per-clip cross-component summary
 
 The diagnostic scripts (`_diag_shot_detection.py`, `_diag_court_lines.py`, `_diag_pose_windows.py`, `_diag_free_scan.py`, `_diag_below_rim_gate.py`) can be re-run at any time on new footage without touching the production pipeline.
+
+---
+
+## 19. Feedback Module — Implementation Checkpoint (current session)
+
+### 19.1 What was added
+
+| File | Change |
+|---|---|
+| `backend/feedback.py` | **New.** Rule-based coaching feedback derived from `AnalyzeResult` only. No CV/LLM. Reads `summary.*` and `shot_points`. |
+| `backend/main.py` | `generate_feedback(out)` called at end of `_build_real_result()`; result stored under `out["feedback"]`. No contract fields changed. |
+| `frontend/src/screens/Session.jsx` | Feedback section rendered below Tip — shows `feedback.summary`, `feedback.insights`, `feedback.recommendations`. Full `showFeedback` guard: section hidden when feedback absent or empty. |
+| `frontend/src/screens/Session.css` | Feedback card styles appended (`.feedback-section`, `.feedback-card`, `.feedback-list`). Existing styles untouched. |
+| `backend/cv_pipeline.py` | `trajectory` dict added to every `shot_point`: `arc_height_px`, `apex_pixel` (`u/v/frame_index`), `up_frame`, `down_frame`. Computed from already-available apex and hoop data — zero change to make/miss logic. |
+
+### 19.2 What feedback.py produces
+
+**Always (when shots exist):**
+- Accuracy tier insight (Strong ≥70% / Mid 45–69% / Low <45%)
+- Made vs missed count insight
+- Ending streak (hot/cold finish)
+- Longest make/miss streak insights
+- First-half vs second-half accuracy delta (requires ≥6 shots)
+
+**When `trajectory.arc_height_px` is present (≥3 shots with data):**
+- Arc height consistency (spread / mean ratio ≥ 35%)
+- Arc fatigue trend (first vs second half delta ≥ 10%)
+- Made vs missed arc comparison (requires ≥2 in each group)
+
+**When `trajectory.apex_pixel` + `up_frame`/`down_frame` present (≥3 shots):**
+- Apex timing consistency (normalized 0–1 spread thresholds)
+
+### 19.3 `trajectory` field in `shot_points`
+
+```
+shot_point = {
+    ...
+    "trajectory": {
+        "arc_height_px":  float | None,   # rim_top_y − apex_v (positive = above rim)
+        "apex_pixel": {
+            "u": int, "v": int, "frame_index": int
+        },
+        "up_frame":   int,
+        "down_frame": int,
+    }
+}
+```
+
+- `arc_height_px` is `None` when `hoop_stable` or apex data is unavailable.
+- This field is **internal / informational** — it is not part of the frozen `AnalyzeResult` contract and not read by `CourtMapper`/`ZoneClassifier`.
+
+### 19.4 Validation
+
+- `backend/_validate_feedback_regression.py` confirmed **9/9 clips PASS** after trajectory addition.
+- Shot counts and make/miss results identical to pre-feedback baseline (`xshot_production_clip_report.txt`).
+- Results saved in `backend/feedback_regression_results.txt`.
+
+### 19.5 Locked constraints (carry forward)
+
+- `feedback.py` reads **only** `summary` and `shot_points` — never `cv_pipeline` internals.
+- `generate_feedback()` is called **after** `_build_real_result()` completes — not inside the CV loop.
+- `trajectory` field must **not** be used by `entry_make_miss`, the state machine, or `OriginEstimator`.
+- If `trajectory` is absent from a shot_point, all trajectory insights are silently skipped (no error).

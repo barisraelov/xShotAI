@@ -303,7 +303,7 @@ def generate_feedback(result: dict) -> dict:
         insights.append(f"Strong session accuracy at {accuracy:.0f}% ({made}/{total} makes).")
         recommendations.append("Maintain rhythm; add variability (speed, range) to stress-test consistency.")
     elif accuracy >= 45:
-        insights.append(f"Mid-range accuracy at {accuracy:.0f}% — room to push into the next tier.")
+        insights.append(f"Session accuracy at {accuracy:.0f}% — room to push into the next tier.")
         recommendations.append("Focus on repeatable footwork and release timing between attempts.")
     else:
         insights.append(f"Accuracy at {accuracy:.0f}% suggests fundamentals or shot selection need attention.")

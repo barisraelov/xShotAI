@@ -681,6 +681,17 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
         origin_pixel = _origin_estimator.estimate(ev)
+
+        # Compute trajectory metadata from already-available apex/hoop data.
+        # arc_height_px: pixels the apex sits above the top of the hoop bbox.
+        # Positive = apex is above the rim (normal shot); None when data absent.
+        hs = ev.get("hoop_stable")          # [cx, cy, frame_idx, w, h, conf]
+        apex_v = ev.get("v")
+        arc_px: Optional[float] = None
+        if hs is not None and apex_v is not None:
+            rim_top_y = hs[1] - hs[4] / 2
+            arc_px = round(rim_top_y - apex_v, 1)
+
         shot_points.append({
             "shot_id": f"s{i:03d}",
             "result":  ev["result"],
@@ -689,6 +700,16 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
                 "court": None,           # populated by CourtMapper (Phase 3)
             },
             "zone": None,               # populated by ZoneClassifier (Phase 4)
+            "trajectory": {
+                "arc_height_px": arc_px,
+                "apex_pixel": {
+                    "u":           ev["u"],
+                    "v":           ev["v"],
+                    "frame_index": ev["frame_index"],
+                },
+                "up_frame":   ev["up_frame"],
+                "down_frame": ev["down_frame"],
+            },
         })
 
     diag: dict = {
