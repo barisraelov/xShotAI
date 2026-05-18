@@ -307,11 +307,11 @@ def main() -> int:
            • Lower ATTEMPT_MAX_FRAME_GAP  (current: {cv_pipeline.ATTEMPT_MAX_FRAME_GAP})
 
       6. MAKE/MISS WRONG — If totals are right but make/miss is off:
-           • Raise SCORE_RIM_X_FRACTION   (current: {cv_pipeline.SCORE_RIM_X_FRACTION})
-             if makes are being called misses.
-           • Lower SCORE_RIM_X_FRACTION if misses are being called makes.
-           • SCORE_REBOUND_PX (current: {cv_pipeline.SCORE_REBOUND_PX}) adds a pixel
-             buffer for near-rim rebounds — raise to be more generous, lower to be strict.
+           • Tune entry rule in backend/entry_make_miss.py (see
+             xshot_make_miss_entry_diagnostic_all/DIAGNOSTIC_RULES_SPEC.txt):
+             BLUE_CHORD_FRAC (0.94), confirmation zone fractions, rescue motion/size
+             gates, rim-relevant trim. Re-run _diag_make_miss_entry_all.py to validate.
+           • Check server logs for score_detail lines starting with "entry:" per shot.
 
       7. NO DETECTIONS AT ALL:
            • Check that best.pt is in the backend/ directory.

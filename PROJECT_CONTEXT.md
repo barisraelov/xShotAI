@@ -67,7 +67,11 @@ It exists only as a dormant safety-net fallback. Do not surface it in the main f
 │   ├── main.py                API server (two endpoints only)
 │   ├── cv_pipeline.py         Rolling-window YOLO pipeline (Session 4 scoring upgrade)
 │   ├── best.pt                YOLOv8n model — Basketball + Basketball Hoop (6.2 MB)
-│   └── requirements.txt       fastapi, uvicorn, opencv-headless, numpy, ultralytics
+│   ├── requirements.txt       fastapi, uvicorn, opencv-headless, numpy, ultralytics
+│   └── test_videos/           מבנה בדיקות מקומי — פירוט קצר ב-**§4b**
+│       ├── input/             קליפי .mp4 לריצה (מקור)
+│       ├── output/            פלט אוטומטי מהסקריפטים (דוחות, debug mp4, תיקיות validation)
+│       └── Diagnostics and More/   ארכיון דיאגנוסטיקה מסודר לפי קליפ וסוג בדיקה
 │
 ├── frontend/                  React + Vite SPA
 │   ├── src/
@@ -85,6 +89,16 @@ It exists only as a dormant safety-net fallback. Do not surface it in the main f
     ├── demo_v1_screen_map.md   Screen→data map for v1 (filename legacy; describes current app screens)
     └── next_steps.md           Current roadmap with completed vs planned items
 ```
+
+### 4b. `backend/test_videos/` — התמצאות (קצר)
+
+| תיקייה | מה שם |
+|--------|--------|
+| **`input/`** | קליפי המקור (`1.mp4` …) + `README.txt`. כאן מניחים קבצים לפני `_run_all_validation.py` / `test_cv.py`. |
+| **`output/`** | כל מה שנוצר **אוטומטית** בריצה: `*_report.txt`, `*_debug.mp4`, תיקיות `N_validation/`, קבצי סיכום כמו `BATCH_SUMMARY_*.txt`. (בדרך כלל לא ב-Git.) |
+| **`Diagnostics and More/`** | **לא** פלט ברירת מחדל של הצינור — אוסף שמור ומסווג לבדיקות. קידומת **מספר** = אותו קליפ כמו ב-`input/N.mp4`. דוגמות: `N_report.txt`, `N_debug.mp4`, `N_free_scan/`, `N_court_diag/`, `N_down_frame_diag/`, `N_release_diag/`, `6_below_rim_gate/`; גם `_validation_before|after`, `output_threshold_tuning`, `output_weak_hoop_fallback`, `release_diag_outputs`. |
+
+**בהיי:** מקור → `input` · מה שהמחשב ייצר עכשיו → `output` · ארכיון מסודר לפי סוג בדיקה → `Diagnostics and More`.
 
 ---
 
@@ -126,15 +140,16 @@ GET /jobs/{job_id}
 | File | What it does |
 |---|---|
 | `main.py` | FastAPI app. `POST /analyze` reads video bytes → dispatches `_process_video_task` via BackgroundTasks. `GET /jobs/{id}` returns status or AnalyzeResult. Fail stub via `fail=1` form field. In-memory job store `_jobs`. **Unchanged since Session 3.** |
-| `cv_pipeline.py` | **Scoring upgraded (Session 4).** Rolling-window YOLO pipeline. `process_video(path)` → list of ShotPoint dicts. Attempt detection unchanged (state machine). Make/miss now uses multi-point parabolic fit with fallbacks. See Section 9 for current state and known remaining issues. |
+| `cv_pipeline.py` | Rolling-window YOLO pipeline. Shot detection via up/down state machine. **Make/miss via `entry_make_miss.score_shot()`** (blue chord + confirmation gate + trajectory rescue). See **§6b** and `DIAGNOSTIC_RULES_SPEC.txt`. |
 | `best.pt` | YOLOv8n model weights (6,256,291 bytes). Classes: 0 = Basketball, 1 = Basketball Hoop. Downloaded from `avishah3/AI-Basketball-Shot-Detection-Tracker`. Must be present in `backend/` for the pipeline to run. |
 | `requirements.txt` | `fastapi`, `uvicorn[standard]`, `python-multipart`, `opencv-python-headless`, `numpy`, `ultralytics>=8.3.0` |
 | `test_cv.py` | Validation runner — `python test_cv.py <video> [--debug-video]`. Runs `_run_pipeline_verbose()`, prints 4 stages. Writes annotated debug video. |
 | `_run_validation.py` | Thin wrapper to handle Hebrew filenames in Windows terminal encoding (runs first `.mp4` in `test_videos/input/`). |
 | `_run_all_validation.py` | **Added Session 4.** Runs `test_cv.py` on every `.mp4` in `test_videos/input/`, saves per-clip reports to `test_videos/output/<name>_report.txt` and writes debug videos. Use this for multi-clip validation. |
 | `_diag_shot5_clip3.py` | **Added Session 4.** One-off diagnostic script (disposable). Can be deleted. |
-| `test_videos/input/` | Drop test `.mp4` clips here before running validation. |
-| `test_videos/output/` | Per-clip `*_report.txt` files and annotated `*_debug.mp4` videos written here. |
+| `test_videos/input/` | קליפי `.mp4` לבדיקות — ראו **§4b**. |
+| `test_videos/output/` | פלט ריצות אוטומטי — ראו **§4b**. |
+| `test_videos/Diagnostics and More/` | ארכיון דיאגנוסטיקה מסודר — ראו **§4b** (לא חלק מחוזה ה-API). |
 
 **cv_pipeline.py tunables (all named constants at top of file):**
 
@@ -155,22 +170,33 @@ GET /jobs/{job_id}
 | `UP_ZONE_Y_FACTOR` | `2.0` | Backboard zone height in hoop-heights above rim |
 | `ATTEMPT_CONFIRM_EVERY` | `10` | Frames between attempt-confirmation polls |
 | `ATTEMPT_MAX_FRAME_GAP` | `120` | Max frame gap between up and down for valid attempt |
-| `SCORE_RIM_X_FRACTION` | `0.40` | Fraction of hoop half-width that counts as make |
-| `SCORE_REBOUND_PX` | `10` | Extra pixel buffer beyond rim edge |
-| `SCORE_MAX_CROSSING_GAP` | `FRAME_STRIDE * 3` (=6) | **New Session 4.** Max frame gap for valid Tier 2 linear crossing pair |
-| `SCORE_MIN_PARABOLIC_POINTS` | `3` | **New Session 4.** Min above-rim points needed for Tier 1 parabolic fit |
-| `MIN_FIRST_SHOT_FRAME` | `5` | **New Session 4.** Ignore attempts with up_frame < this (suppresses start-of-clip false triggers) |
+| `MIN_FIRST_SHOT_FRAME` | `5` | Ignore attempts with up_frame < this (suppresses start-of-clip false triggers) |
 
-**cv_pipeline.py scoring architecture (Session 4):**
+**Make/miss tunables** live in `backend/entry_make_miss.py` (not in `cv_pipeline.py`). Key values: `BLUE_CHORD_FRAC_OF_HW=0.94`, confirmation zone 70% width / 17.5% offset, rescue `0.05`/`0.025`, rim trim after exit below hoop. Full list: `xshot_make_miss_entry_diagnostic_all/DIAGNOSTIC_RULES_SPEC.txt`.
 
-`_score()` is now a thin orchestrator calling three helpers. All scoring logic is contained within these functions — the state machine and rolling windows are untouched:
+### 6b. Make/miss — entry rule (current production, 2026-05)
 
-| Function | Role |
-|---|---|
-| `_extract_rim_approach_points(ball_pos, hoop_pos, up_frame)` | Collects all above-rim ball detections from up_frame onward. Applies per-frame deduplication (Most Novel Position rule — see Section 16). Returns `(points, rim_y)`. |
-| `_fit_rim_crossing(points, rim_y, hoop_pos)` | Three-tier fit: Tier 1 parabolic (≥3 pts), Tier 2 validated linear (2 pts, short gap, falling slope), Tier 3 insufficient data (returns None). Returns `(predicted_cx, tier_label)` for debug logging. |
-| `_check_rim_crossing(predicted_cx, hoop_pos)` | Acceptance check: predicted_cx within `hcx ± SCORE_RIM_X_FRACTION*hw ± SCORE_REBOUND_PX`. |
-| `_score(ball_pos, hoop_pos, up_frame)` | Orchestrates the three above. Returns `(is_made: bool, detail: str)`. `detail` is logged at INFO level per shot — shows tier, pred_cx, and rim range. |
+**Authoritative code:** `backend/entry_make_miss.py`  
+**Production call site:** `entry_make_miss.score_shot(...)` from `_run_pipeline_inner` and `_run_state_machine_with_fallback` in `cv_pipeline.py` (on each confirmed shot).
+
+**Removed from production (deleted from `cv_pipeline.py`):** parabolic `_score()`, `_fit_rim_crossing`, two-gate `_check_two_gate_presence`. Old `_diag_*` scripts that still reference those APIs are historical presentation artifacts only.
+
+#### Flow per confirmed shot
+
+1. **Shot window** — frames from `up_frame` to `min(down+50, up+180, next_up-1, end)`.
+2. **Seed trajectory** — production `ball_points_window` from the rolling pipeline.
+3. **Build continuous trajectory** — stride 2 until ball enters capture zone; then step 1 (dense). Per frame: YOLO ball @ conf≥0.025; prefer production-threshold detection; else **trajectory-guided rescue** at 0.05 then 0.025 if motion + ball-size match recent points (no cold starts).
+4. **Rim-relevant trim** — after the ball has interacted with capture/confirm/blue chord, drop late points that exit clearly below the hoop (ball back in player's hands) so they do not break geometry or MAKE/MISS.
+5. **Geometry check** — weak-rim left edge, degenerate hoop, rim–ball horizontal mismatch (on trimmed path only).
+6. **Entry rule (MAKE/MISS):**
+   - **Blue chord** — horizontal segment at top of hoop bbox, width **94%** of `hw`, clamped inside bbox.
+   - **Blue hit** — strict: segment intersects chord or vertex within 1px on chord (no near-miss).
+   - **MAKE** — some blue hit, then later entry into **green confirmation** rectangle (70% hoop width, offset 17.5% of `hh` below blue, height 35% of `hh`).
+   - **MISS** — no blue, blue without confirm, or insufficient points / invalid geometry (counts as missed in API).
+
+#### Browser path
+
+`main.py` → `cv_pipeline.process_video` → `_run_pipeline_inner` → `entry_make_miss.score_shot` → `result: "made" | "missed"` in each shot event → `AnalyzeResult.shot_points`.
 
 **cv_pipeline.py internal API:**
 - `process_video(path)` → `list[dict]` — public contract, called by `main.py`
@@ -226,11 +252,11 @@ These were explicitly confirmed by the product owner. Do not reopen them.
 9. **Shot map CTA on Session is hidden** when no `shot_points` have non-null `origin.court`.
 10. **HSV hoop detection is permanently abandoned.** The YOLO-based pipeline is the only direction. Do not reintroduce colour-based hoop detection.
 11. **The pipeline architecture is the avishah3 rolling-window state machine.** Do not revert to track-building. The decision is locked.
-12. **The scoring architecture (parabolic fit with fallbacks) is the current direction.** Do not revert to the old 2-point linear interpolation. The decision is locked.
-13. **`_score()` and `OriginEstimator` are permanently decoupled.** Neither reads from the other. Their only shared input is the `RichShotEvent` dict. Do not merge them.
+12. **Make/miss uses the entry rule (`entry_make_miss.score_shot`).** Blue chord 94% + strict touch + confirmation gate + shot-window rescue. Parabolic `_score` and two-gate upgrade are **removed** from production code. Do not reintroduce them without explicit approval.
+13. **`entry_make_miss` and `OriginEstimator` are decoupled.** Neither reads from the other. Shared input is shot event data (`ball_pos`, frames, hoop). Do not merge them.
 14. **`origin.pixel` semantics: trajectory-anchor, not apex.** The previous apex-based `origin.pixel` (highest mid-air point) was semantically wrong for court-zone mapping. The correct anchor is the ball's position near the shot start (`up_frame` window), which is closest to where the shooter stood on the court floor. This is locked as the baseline. See `backend/origin_estimator.py`.
 15. **Release-frame detection is a future upgrade path, not a current hard requirement.** Exact release-frame (via pose / hand-ball proximity) improves origin accuracy and unlocks coaching features, but it is not required for court mapping or zone classification. It is implemented as an optional plugin in `OriginEstimator` (Phase 6). Do not make zone classification block on it.
-16. **`OriginEstimator`, `CourtMapper`, `ZoneClassifier` are separate modules with clean dict interfaces.** Each lives in its own file. They are called sequentially after shot confirmation and never from inside `_score()` or the state machine loop.
+16. **`OriginEstimator`, `CourtMapper`, `ZoneClassifier` are separate modules with clean dict interfaces.** Each lives in its own file. They are called sequentially after shot confirmation and never from inside `entry_make_miss` or the state machine loop.
 
 ---
 
@@ -246,8 +272,8 @@ These were explicitly confirmed by the product owner. Do not reopen them.
 | Review mode UI | Explicitly later | Not in current scope |
 | Production cloud hosting | Explicitly later | Localhost sufficient for current phase |
 | Manual calibration as user feature | Removed from main UX | `Calibrate.jsx` dormant — do not re-surface without approval |
-| Near-hoop presence / net pixel-change scoring | Future robustness improvement | Would complement parabolic fit for cases where ball is not visible near rim |
-| **Fixed two-gate presence cue** (supplementary make/miss) | **Specified + Clip 6 diagnostic** — rules and geometry in Section 9; not wired to production scoring yet | Requires upper+lower gate hits in order after `_score()` MISS; diagnostic script `_diag_below_rim_gate.py`. |
+| Near-hoop presence / net pixel-change scoring | Future robustness improvement | Could complement entry rule when ball is not visible near rim |
+| ~~Fixed two-gate / parabolic `_score`~~ | **Superseded (2026-05)** | Removed from `cv_pipeline.py`. Historical diagnostics only. |
 
 ---
 
@@ -276,6 +302,132 @@ These were explicitly confirmed by the product owner. Do not reopen them.
 - **s003:** upgraded by `+two_gate` with **upper hit frame 522** and **lower hit frame 536**.
 - **s001, s002, s004:** remain **MISS**.
 - No unexpected changes in other clips.
+
+### Latest diagnostic checkpoint — observed-polyline scoring (diagnostic only, paused)
+
+> **Status:** completed as a diagnostic experiment, then **explicitly paused/cancelled** by product owner.  
+> **Production is unchanged.**
+
+**What was executed (diagnostic only):**
+- Existing multi-variant comparison path was stopped and its output folder removed.
+- Visual `_score()` debug videos were generated for clips **10** and **14**.
+- A separate diagnostic scorer (`observed polyline near rim`) was run on clips:
+  `1, 4, 6, 7, 8, 9, 10, 11, 12, 13, 14`.
+- Diagnostic output root used:
+  `C:\Users\baris\Desktop\xshot_observed_polyline_score_debug\`
+  (per-clip/per-shot annotated MP4 + `summary.txt`, plus `BATCH_SUMMARY.txt`).
+
+**Key finding from visual review (important):**
+- The current diagnostic definitions of “entry” are too weak in edge cases.
+- Multiple shots were classified as **MAKE** from minimal geometric evidence
+  (often only 2 near-rim points and a line-height crossing inside rim-x window),
+  while visually the ball path did **not** clearly show true entry into the hoop.
+- This indicates the project currently lacks a robust/physical definition of
+  **“ball entered the hoop”** for difficult cases (bank/rim-contact/zigzag/low-point evidence).
+
+**Decision locked for next session:**
+- Do **not** promote observed-polyline diagnostic logic to production.
+- Keep all changes diagnostic-only until a stricter “entry” definition and
+  evidence rules are specified and validated.
+- Continue make/miss improvement work as analysis-first (no production wiring
+  without explicit approval).
+
+### Next make/miss diagnostic direction — pending
+
+The next planned step is to design a diagnostic-only tool for improving the make/miss decision algorithm.
+
+The goal is to visually and numerically inspect whether the detected ball trajectory truly enters the hoop area before considering any production scoring change.
+
+**Scope**
+
+- Diagnostic only.
+- Start with clip **11** only.
+- No production changes.
+- No `cv_pipeline.py` production scoring changes.
+- No `AnalyzeResult` changes.
+- No frontend changes.
+- Output should be a **new Desktop diagnostic folder**.
+- Each shot/candidate window should have an annotated `.mp4`, `summary.txt`, and relevant key frames.
+
+**Desired trajectory behavior**
+
+- Build the ball trajectory from `up_frame` / shot-window start.
+- Include points both outside and inside the capture/hoop area.
+- Use coarse sampling first.
+- When the ball/candidate enters the capture area near the hoop, switch to dense sampling.
+- Dense sampling means checking every frame.
+- The capture area should trigger dense sampling, but the trajectory itself should not be limited only to the capture area.
+
+**Ball detection thresholds**
+
+- Regular detection outside hoop region: around `0.30`.
+- Regular detection near hoop / hoop region: `0.10`.
+- If no regular ball is accepted in a frame, try rescue candidates down to `0.05`, labeled `RESCUE_005`.
+- If still no plausible ball is found, try rescue candidates down to `0.025`, labeled `RESCUE_0025`.
+- Rescue points are not normal detections.
+- Output must clearly distinguish:
+  - `REGULAR`
+  - `RESCUE_005`
+  - `RESCUE_0025`
+
+**Low-confidence rescue rules**
+
+- Rescue should be permissive, but not blind.
+- Do not use a tight motion gate.
+- Do not require perfect velocity continuation.
+- Keep motion/radius sanity checks.
+- Prefer candidates that are roughly ball-shaped, similar in size to recent ball detections, and reasonably close to the recent trajectory or expected path.
+- Reject obvious garbage.
+- Do not allow very low-confidence detections to start a fake trajectory from an unrelated object.
+
+**Hoop/rim geometry**
+
+- For every shot/candidate window, log the hoop/rim geometry source used.
+- The diagnostic should compare available hoop sources when relevant, such as per-shot hoop data and stable/global hoop data.
+- The chosen geometry must place the hoop bbox, capture area, blue chord, and confirmation area on the real hoop.
+- If geometry is not on the real hoop, the diagnostic output should be marked **invalid** rather than silently trusted.
+
+**Blue chord / rim-entry line**
+
+- Use a blue chord as the rim-entry line.
+- Width should be about **90%** of the detected hoop/rim width.
+- Center it on the chosen hoop/rim geometry.
+- Do not let it leak outside the hoop sides.
+- Do not make it too narrow, because that may miss real makes.
+
+**Confirmation area**
+
+- Create a confirmation area below the blue chord.
+- Move it about **10–15%** lower than the blue line.
+- Width should be around **60–70%** of hoop/rim width.
+- Draw it clearly in the annotated video.
+
+**Diagnostic MAKE rule**
+
+- Diagnostic MAKE only if **both** happen **in order**:
+  1. The ball trajectory crosses the blue chord / rim-entry line.
+  2. After that, the trajectory enters or crosses the confirmation area.
+- Blue cross alone is not enough.
+- Confirmation alone is not enough.
+
+**Required annotated video**
+
+Each annotated video should clearly show:
+
+- hoop bbox / rim geometry
+- capture area
+- blue chord
+- confirmation area
+- ball trajectory from shot start
+- `REGULAR` vs `RESCUE_005` vs `RESCUE_0025`
+- UP / DOWN / dense-start markers if available
+- production result if available
+- diagnostic result
+- failure reason
+
+**Next-session reminder**
+
+Before implementing, first inspect the current production code to determine the safest source for shot windows, ball detections, and hoop/rim geometry. The diagnostic should avoid misleading output if shot count or hoop geometry is inconsistent.
 
 ### Next investigation (after this checkpoint)
 
@@ -478,8 +630,9 @@ If re-validation on better footage still shows systematic make/miss errors:
 | `backend/test_cv.py` | Validation runner using `_run_pipeline_verbose()`. Stage 3 shows apex markers; Stage 4 JSON shows trajectory-anchor origin. |
 | `backend/_run_all_validation.py` | **New Session 4.** Multi-clip validation runner. Use this for all future validation runs. |
 | `backend/_run_validation.py` | Legacy single-clip wrapper for Hebrew filename encoding on Windows |
-| `backend/test_videos/input/` | Place test clips here |
-| `backend/test_videos/output/` | Per-clip `*_report.txt` and `*_debug.mp4` saved here |
+| `backend/test_videos/input/` | קליפי בדיקה — **§4b** |
+| `backend/test_videos/output/` | פלט ריצות — **§4b** |
+| `backend/test_videos/Diagnostics and More/` | ארכיון דיאגנוסטיקה — **§4b** |
 | `frontend/src/App.jsx` | Root component — state machine, DEMO_STUB, screen routing |
 | `frontend/src/api.js` | `postAnalyze()`, `getJob()` — proxy to port 8000 |
 | `frontend/src/index.css` | Design tokens (CSS variables), global styles |
