@@ -1,6 +1,5 @@
 import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
-import ZoneGrid from '../components/ZoneGrid'
 import BottomNav from '../components/BottomNav'
 import './Heatmap.css'
 
@@ -14,8 +13,7 @@ export default function Heatmap({ navigate, result }) {
     )
   }
 
-  const { summary, shot_points, zone_aggregates } = result
-  const plottable = shot_points.filter(s => s.origin?.court !== null).length
+  const { summary, zone_aggregates } = result
 
   return (
     <div className="screen-enter">
@@ -26,22 +24,17 @@ export default function Heatmap({ navigate, result }) {
 
       <div className="heatmap-topline">
         <div className="pill">
-          <b>{summary.made}</b> made · <b>{summary.total_shots}</b> attempts
-        </div>
-        <div className="pill" style={{ fontSize: '0.78rem' }}>
-          {plottable} plotted
+          <b>{summary.made}</b> made · <b>{summary.total_shots}</b> attempts · <b>{summary.accuracy_pct.toFixed(0)}%</b>
         </div>
       </div>
 
-      <CourtMap shotPoints={shot_points} />
+      <CourtMap zoneAggregates={zone_aggregates} />
 
       <div className="heatmap-legend">
-        <span className="legend-dot dot-made" /> Made
-        <span className="legend-dot dot-missed" style={{ marginLeft: '16px' }} /> Missed
+        <span className="legend-swatch" style={{ background: 'rgba(52,211,153,0.5)' }} /> ≥60%
+        <span className="legend-swatch" style={{ background: 'rgba(251,191,36,0.5)', marginLeft: 12 }} /> 35–59%
+        <span className="legend-swatch" style={{ background: 'rgba(248,113,113,0.5)', marginLeft: 12 }} /> &lt;35%
       </div>
-
-      <div className="section-title">Zones</div>
-      <ZoneGrid zoneAggregates={zone_aggregates} />
 
       <BottomNav active="heatmap" navigate={navigate} />
     </div>

@@ -55,6 +55,60 @@
   letter-spacing: 0.06em;
 }
 
+/* ── Zone breakdown ── */
+.zone-breakdown {
+  padding: 0 20px 20px;
+}
+
+.zone-breakdown-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.zone-breakdown-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.zone-card {
+  background: var(--bg-card);
+  border-radius: 12px;
+  padding: 14px 16px;
+  text-align: center;
+}
+
+.zone-card-label {
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  margin-bottom: 6px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.zone-card-stat {
+  font-size: 1.5rem;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.zone-card-denom {
+  font-size: 0.9rem;
+  font-weight: 500;
+  color: var(--text-muted);
+}
+
+.zone-card-pct {
+  font-size: 0.82rem;
+  color: var(--orange);
+  font-weight: 600;
+  margin-top: 4px;
+}
+
 /* ── Feedback (result.feedback) ── */
 .feedback-section {
   padding-bottom: 4px;

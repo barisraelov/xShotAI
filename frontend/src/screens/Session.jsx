@@ -12,6 +12,18 @@ function weakestZone(zoneAggregates) {
   )[0]
 }
 
+// Derive 2pt / 3pt stats directly from shot_points zone data
+function zoneBreakdown(shotPoints) {
+  if (!shotPoints?.some(s => s.zone)) return null
+  const twos   = shotPoints.filter(s => s.zone?.range_class === 'two_point')
+  const threes = shotPoints.filter(s => s.zone?.range_class === 'three_point')
+  const calc   = arr => ({
+    attempts: arr.length,
+    made:     arr.filter(s => s.result === 'made').length,
+  })
+  return { twos: calc(twos), threes: calc(threes) }
+}
+
 export default function Session({ navigate, result }) {
   if (!result) {
     return (
@@ -23,13 +35,14 @@ export default function Session({ navigate, result }) {
   }
 
   const { summary, zone_aggregates, shot_points, feedback } = result
-  const weak = weakestZone(zone_aggregates)
-  const accuracyDeg = `${(summary.accuracy_pct / 100 * 360).toFixed(1)}deg`
+  const weak         = weakestZone(zone_aggregates)
+  const breakdown    = zoneBreakdown(shot_points)
+  const accuracyDeg  = `${(summary.accuracy_pct / 100 * 360).toFixed(1)}deg`
   const hasCourtData = shot_points?.some(s => s.origin?.court !== null)
 
-  const fbSummary = feedback?.summary
+  const fbSummary  = feedback?.summary
   const fbInsights = Array.isArray(feedback?.insights) ? feedback.insights : []
-  const fbRecs = Array.isArray(feedback?.recommendations) ? feedback.recommendations : []
+  const fbRecs     = Array.isArray(feedback?.recommendations) ? feedback.recommendations : []
   const showFeedback =
     feedback &&
     (fbSummary?.headline ||
@@ -74,6 +87,36 @@ export default function Session({ navigate, result }) {
         <div className="tip-box">
           💡 <strong>Tip:</strong> Work on your <strong>{weak.label}</strong> shots —
           currently at {weak.accuracy_pct.toFixed(0)}% ({weak.made}/{weak.attempts} made).
+        </div>
+      )}
+
+      {breakdown && (
+        <div className="zone-breakdown">
+          <div className="zone-breakdown-title">Shot breakdown</div>
+          <div className="zone-breakdown-row">
+            <div className="zone-card">
+              <div className="zone-card-label">2-point</div>
+              <div className="zone-card-stat">
+                {breakdown.twos.made}<span className="zone-card-denom">/{breakdown.twos.attempts}</span>
+              </div>
+              <div className="zone-card-pct">
+                {breakdown.twos.attempts > 0
+                  ? `${Math.round(breakdown.twos.made / breakdown.twos.attempts * 100)}%`
+                  : '—'}
+              </div>
+            </div>
+            <div className="zone-card">
+              <div className="zone-card-label">3-point</div>
+              <div className="zone-card-stat">
+                {breakdown.threes.made}<span className="zone-card-denom">/{breakdown.threes.attempts}</span>
+              </div>
+              <div className="zone-card-pct">
+                {breakdown.threes.attempts > 0
+                  ? `${Math.round(breakdown.threes.made / breakdown.threes.attempts * 100)}%`
+                  : '—'}
+              </div>
+            </div>
+          </div>
         </div>
       )}
 

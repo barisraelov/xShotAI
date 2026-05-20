@@ -16,6 +16,7 @@ Test / dev helpers:
 """
 
 import asyncio
+import json
 import logging
 import os
 import tempfile
@@ -29,6 +30,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
 import cv_pipeline
+from court_mapper import CourtMapper
 from feedback import generate_feedback
 
 logger = logging.getLogger(__name__)
@@ -40,16 +42,46 @@ _jobs: dict[str, dict] = {}
 
 # ── Result builder ─────────────────────────────────────────────────────────────
 
-def _build_real_result(job_id: str, shot_points: list[dict]) -> dict:
+def _build_real_result(
+    job_id: str,
+    shot_points: list[dict],
+    homography_list: Optional[list] = None,
+) -> dict:
     """
     Derive the full AnalyzeResult from real shot_points produced by cv_pipeline.
-    origin.court and zone are null on every shot point (court detection is step 6).
-    zone_aggregates is empty for the same reason.
+    When calibration was provided, origin.court, zone, and zone_aggregates are
+    populated; otherwise they remain null / empty (graceful degradation).
     """
-    total = len(shot_points)
-    made  = sum(1 for s in shot_points if s["result"] == "made")
-    missed = total - made
+    total    = len(shot_points)
+    made     = sum(1 for s in shot_points if s["result"] == "made")
+    missed   = total - made
     accuracy = round(made / total * 100, 2) if total > 0 else 0.0
+
+    # Aggregate zone stats from individual shot zone data (if present).
+    zone_map: dict = {}
+    for s in shot_points:
+        z = s.get("zone")
+        if not z:
+            continue
+        pid = z["polygon_id"]
+        if pid not in zone_map:
+            zone_map[pid] = {
+                "polygon_id":  pid,
+                "range_class": z["range_class"],
+                "label":       z["label"],
+                "attempts":    0,
+                "made":        0,
+            }
+        zone_map[pid]["attempts"] += 1
+        if s["result"] == "made":
+            zone_map[pid]["made"] += 1
+
+    zone_aggregates = []
+    for z in zone_map.values():
+        z["accuracy_pct"] = (
+            round(z["made"] / z["attempts"] * 100, 2) if z["attempts"] > 0 else 0.0
+        )
+        zone_aggregates.append(z)
 
     out = {
         "job_id": job_id,
@@ -61,12 +93,12 @@ def _build_real_result(job_id: str, shot_points: list[dict]) -> dict:
             "accuracy_pct": accuracy,
         },
         "shot_points":     shot_points,
-        "zone_aggregates": [],   # not computed until automatic court detection (step 6)
+        "zone_aggregates": zone_aggregates,
         "mapping": {
             "court_norm_version": "1.0",
             "polygon_version":    "1.0",
             "y_flip_applied":     False,
-            "homography_matrix":  None,
+            "homography_matrix":  homography_list,
         },
     }
     out["feedback"] = generate_feedback(out)
@@ -88,7 +120,11 @@ async def _simulate_failure(job_id: str) -> None:
         }
 
 
-async def _process_video_task(job_id: str, video_bytes: bytes) -> None:
+async def _process_video_task(
+    job_id: str,
+    video_bytes: bytes,
+    court_mapper: Optional[CourtMapper] = None,
+) -> None:
     """
     Write video bytes to a temp file, run the CV pipeline in a thread pool
     (to keep the event loop free), then store the result in the job store.
@@ -103,10 +139,13 @@ async def _process_video_task(job_id: str, video_bytes: bytes) -> None:
         logger.info("Job %s: starting CV pipeline on %s (%d bytes)",
                     job_id, tmp_path, len(video_bytes))
 
-        shot_points = await asyncio.to_thread(cv_pipeline.process_video, tmp_path)
+        shot_points = await asyncio.to_thread(
+            cv_pipeline.process_video, tmp_path, court_mapper
+        )
 
+        homography_list = court_mapper.homography_matrix if court_mapper else None
         _jobs[job_id]["status"] = "completed"
-        _jobs[job_id]["result"] = _build_real_result(job_id, shot_points)
+        _jobs[job_id]["result"] = _build_real_result(job_id, shot_points, homography_list)
         logger.info("Job %s: completed — %d shots detected", job_id, len(shot_points))
 
     except Exception as exc:
@@ -151,7 +190,7 @@ app.add_middleware(
 async def analyze(
     background_tasks: BackgroundTasks,
     video: UploadFile = File(...),
-    calibration_points: Optional[str] = Form(None),  # reserved for step 6
+    calibration_points: Optional[str] = Form(None),  # JSON: [[u,v], ...] × 6
     fail: Optional[str] = Form(None),                # "1" or "true" → stub failure
 ):
     job_id = f"job_{uuid.uuid4().hex[:10]}"
@@ -161,7 +200,20 @@ async def analyze(
         background_tasks.add_task(_simulate_failure, job_id)
     else:
         video_bytes = await video.read()
-        background_tasks.add_task(_process_video_task, job_id, video_bytes)
+
+        court_mapper: Optional[CourtMapper] = None
+        if calibration_points:
+            logger.info("Job %s: received calibration_points = %s", job_id, calibration_points)
+            try:
+                pts = json.loads(calibration_points)
+                court_mapper = CourtMapper(pts)
+                logger.info("Job %s: CourtMapper ready", job_id)
+            except Exception as exc:
+                logger.warning("Job %s: could not build CourtMapper — %s", job_id, exc)
+        else:
+            logger.info("Job %s: no calibration_points received — court mapping disabled", job_id)
+
+        background_tasks.add_task(_process_video_task, job_id, video_bytes, court_mapper)
 
     return {"job_id": job_id}
 

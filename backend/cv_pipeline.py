@@ -12,8 +12,7 @@ Responsibilities:
 
 Contract:
   - process_video(path) → list of ShotPoint dicts matching AnalyzeResult.shot_points.
-  - origin.court and zone are always None — court mapping requires automatic lane
-    detection (next_steps.md step 6), which is not yet implemented.
+  - When court_mapper is provided, origin.court and zone are populated per shot.
   - Returns an empty list if the video is valid but no shots were detected.
   - Raises RuntimeError on unrecoverable errors (corrupt file, model not found).
 
@@ -39,8 +38,10 @@ import numpy as np
 
 from origin_estimator import OriginEstimator
 from release_estimator import ReleaseEstimator
+from court_mapper import CourtMapper
 
 import entry_make_miss
+from shot_data_builder import build_shot_data, ShotData
 
 logger = logging.getLogger(__name__)
 
@@ -235,6 +236,8 @@ def _detect_down(ball_pos: list, hoop_pos: list) -> bool:
     return bcy > hcy + 0.5 * hh
 
 
+
+
 def _find_apex(ball_pos: list, up_frame: int, down_frame: int) -> Optional[tuple]:
     """
     Return the ball detection with minimum cy (highest image point) in the
@@ -410,9 +413,61 @@ def _run_state_machine_with_fallback(
     return shot_events
 
 
+# ── Floor-origin helper ───────────────────────────────────────────────────────
+
+def _detect_player_feet(
+    video_path: str,
+    up_frame: int,
+    person_model,
+) -> tuple[Optional[int], Optional[int]]:
+    """
+    Return the (u, v) pixel of the largest detected person's feet
+    in a window of frames before up_frame.  Feet = bottom-centre of the
+    person bounding box, which lies on the court floor — unlike the
+    ball (chest height), which cannot be accurately mapped through
+    a floor-plane homography.
+
+    Scans every 3rd frame in [up_frame-30, up_frame-3] and returns the
+    detection with the largest bounding-box area across all sampled frames.
+    This is more robust than a single-frame lookup, which can miss the person
+    if YOLO has a transient detection gap.
+
+    Returns (None, None) if no person is detected or the model is absent.
+    """
+    if person_model is None:
+        return None, None
+
+    cap = cv2.VideoCapture(video_path)
+    if not cap.isOpened():
+        return None, None
+
+    best_area = 0
+    foot_u, foot_v = None, None
+    start = max(0, up_frame - 30)
+    end   = max(0, up_frame - 3)
+
+    for seek in range(start, end + 1, 3):
+        cap.set(cv2.CAP_PROP_POS_FRAMES, seek)
+        ok, frame = cap.read()
+        if not ok:
+            continue
+        results = person_model(frame, verbose=False, conf=0.30, classes=[0])
+        for r in results:
+            for box in r.boxes:
+                x1, y1, x2, y2 = box.xyxy[0].tolist()
+                area = (x2 - x1) * (y2 - y1)
+                if area > best_area:
+                    best_area = area
+                    foot_u = int((x1 + x2) / 2)
+                    foot_v = int(y2)   # bottom of bbox ≈ feet on floor
+
+    cap.release()
+    return foot_u, foot_v
+
+
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
-def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
+def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = None) -> tuple[list[dict], dict]:
     """
     Single-pass pipeline: process video frame by frame, maintaining rolling
     state for hoop and ball positions, running the shot state machine, and
@@ -430,7 +485,7 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
 
     fps          = cap.get(cv2.CAP_PROP_FPS) or 30.0
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-    frame_width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    frame_width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_count  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     logger.info(
         "Processing video: %s  fps=%.1f  frames=%d  h=%d",
@@ -545,43 +600,33 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
                         up_frame, MIN_FIRST_SHOT_FRAME,
                     )
                 elif down_frame - up_frame <= ATTEMPT_MAX_FRAME_GAP:
-                    is_made, score_detail = entry_make_miss.score_shot(
-                        video_path, model, ball_pos, hoop_pos,
+                    ball_window = [
+                        p for p in ball_pos if up_frame <= p[2] <= down_frame
+                    ]
+                    ev_dict = {
+                        "ball_points_window": ball_window,
+                        "ball_pos_snapshot":  list(ball_pos),
+                        "up_frame":           up_frame,
+                        "down_frame":         down_frame,
+                        "hoop_stable": list(hoop_pos[-1]) if hoop_pos else None,
+                        "_video_path": str(path),
+                    }
+                    shot_data = build_shot_data(
+                        str(path), model, ev_dict,
                         up_frame, down_frame, frame_count, frame_width,
                         hoop_accepted_count,
                     )
+                    is_made, score_detail = entry_make_miss.score_shot_from_data(
+                        shot_data, frame_width, hoop_accepted_count,
+                    )
                     apex = _find_apex(ball_pos, up_frame, down_frame)
                     if apex is not None:
-                        # Phase 1: capture raw trajectory data for OriginEstimator.
-                        # ball_pos at this point still contains the rolling window,
-                        # including pre-up_frame detections (ball at shooter level).
-                        # We snapshot it now before the window rolls further.
-                        ball_window = [
-                            p for p in ball_pos
-                            if up_frame <= p[2] <= down_frame
-                        ]
-                        shot_events.append({
-                            # ── Legacy fields (apex) ──────────────────────────
-                            # Used ONLY by test_cv.py debug video and per-shot
-                            # table.  NOT written to AnalyzeResult.shot_points.
-                            # origin.pixel in the contract is computed by
-                            # OriginEstimator below (trajectory-anchor, Phase 2).
-                            "frame_index": apex[2],
-                            "u":           int(apex[0]),
-                            "v":           int(apex[1]),
-                            # ── Result (shared) ───────────────────────────────
-                            "result": "made" if is_made else "missed",
-                            # ── Raw data for OriginEstimator (internal only) ───
-                            # Never propagated to the AnalyzeResult contract.
-                            # Enables trajectory-anchor origin now and the future
-                            # release+pose estimator (Phase 6) without re-running
-                            # the pipeline.
-                            "ball_points_window": ball_window,
-                            "ball_pos_snapshot":  list(ball_pos),
-                            "up_frame":           up_frame,
-                            "down_frame":         down_frame,
-                            "hoop_stable": list(hoop_pos[-1]) if hoop_pos else None,
-                        })
+                        ev_dict["frame_index"] = apex[2]
+                        ev_dict["u"]           = int(apex[0])
+                        ev_dict["v"]           = int(apex[1])
+                        ev_dict["result"]      = "made" if is_made else "missed"
+                        ev_dict["_shot_data"]  = shot_data
+                        shot_events.append(ev_dict)
                         logger.info(
                             "Shot at frame %d: %s  [%s]  "
                             "(up=%d  down=%d  ball_window=%d pts)",
@@ -675,17 +720,64 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
     # _find_apex is still used to drive the debug-video markers in test_cv.py
     # (stored as legacy ev["u"]/ev["v"]/ev["frame_index"]).  It is NOT used here.
     # Internal-only context for OriginEstimator plug-ins (e.g., ReleaseEstimator).
-    for ev in shot_events:
-        ev["_video_path"] = str(path)
+    # Load the person-detection model once — used by shot_data_builder for feet detection.
+    _person_model = None
+    if court_mapper is not None:
+        person_model_path = Path(__file__).parent / "yolov8n.pt"
+        if person_model_path.exists():
+            from ultralytics import YOLO as _YOLO
+            _person_model = _YOLO(str(person_model_path))
+            logger.info("Loaded person model for floor-origin detection")
+        else:
+            logger.warning("yolov8n.pt not found — falling back to ball pixel for court mapping")
+
+    # When court_mapper is active, rebuild shot_data with person detection included.
+    # shot_data was built during the confirmation loop without person_model; rebuild
+    # it now if court_mapper is present so person_feet is populated.
+    if court_mapper is not None and _person_model is not None:
+        for ev in shot_events:
+            sd: ShotData = ev.get("_shot_data")
+            if sd is not None and sd.person_feet is None:
+                sd.person_feet = __import__("shot_data_builder")._scan_person_feet(
+                    str(path), ev["up_frame"], _person_model
+                )
 
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
         origin_pixel = _origin_estimator.estimate(ev)
 
-        # Compute trajectory metadata from already-available apex/hoop data.
-        # arc_height_px: pixels the apex sits above the top of the hoop bbox.
-        # Positive = apex is above the rim (normal shot); None when data absent.
-        hs = ev.get("hoop_stable")          # [cx, cy, frame_idx, w, h, conf]
+        court = None
+        zone  = None
+        if court_mapper is not None:
+            # Use person_feet from ShotData (pre-shot person scan) when available.
+            sd = ev.get("_shot_data")
+            floor_u: Optional[int] = None
+            floor_v: Optional[int] = None
+            if sd is not None and sd.person_feet is not None:
+                floor_u, floor_v = sd.person_feet
+
+            using_ball_pixel = False
+            if floor_u is not None:
+                logger.info("Shot s%03d feet pixel = (%d, %d)", i, floor_u, floor_v)
+            elif origin_pixel is not None:
+                floor_u = origin_pixel.get("u")
+                floor_v = origin_pixel.get("v")
+                using_ball_pixel = True
+                logger.info("Shot s%03d no person found — using ball pixel (%s, %s)", i, floor_u, floor_v)
+
+            if floor_u is not None and floor_v is not None:
+                # When ball pixel is used, it is aerial (not on the floor), so the
+                # floor-plane homography gives an unreliable x-coordinate.  Pass the
+                # hoop's pixel x as a reference so classify_zone can determine
+                # left/right by direct pixel comparison instead of via homography.
+                hoop = ev.get("hoop_stable")
+                hoop_cx = int(hoop[0]) if hoop else None
+                pixel_side_ref = (floor_u, hoop_cx) if using_ball_pixel and hoop_cx is not None else None
+                court, zone = court_mapper.map_shot(floor_u, floor_v, pixel_side_ref=pixel_side_ref)
+                logger.info("Shot s%03d court = %s  zone = %s", i, court, zone)
+
+        # Trajectory metadata — arc height and apex pixel for debug/UI.
+        hs     = ev.get("hoop_stable")          # [cx, cy, frame_idx, w, h, conf]
         apex_v = ev.get("v")
         arc_px: Optional[float] = None
         if hs is not None and apex_v is not None:
@@ -696,10 +788,10 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
             "shot_id": f"s{i:03d}",
             "result":  ev["result"],
             "origin": {
-                "pixel": origin_pixel,   # trajectory-anchor (Phase 2)
-                "court": None,           # populated by CourtMapper (Phase 3)
+                "pixel": origin_pixel,
+                "court": court,
             },
-            "zone": None,               # populated by ZoneClassifier (Phase 4)
+            "zone": zone,
             "trajectory": {
                 "arc_height_px": arc_px,
                 "apex_pixel": {
@@ -732,29 +824,25 @@ def _run_pipeline_inner(video_path: str) -> tuple[list[dict], dict]:
 
 # ── Public API ────────────────────────────────────────────────────────────────
 
-def process_video(video_path: str) -> list[dict]:
+def process_video(
+    video_path: str,
+    court_mapper: Optional[CourtMapper] = None,
+) -> list[dict]:
     """
     Analyse a basketball training video and return a list of ShotPoint dicts
-    conforming to the frozen AnalyzeResult contract:
+    conforming to the frozen AnalyzeResult contract.
 
-        {
-            "shot_id":  "s001",
-            "result":   "made" | "missed",
-            "origin": {
-                "pixel":  {"u": int, "v": int, "frame_index": int},
-                "court":  None,   # not computed — requires court detection (step 6)
-            },
-            "zone": None,         # not computed — requires origin.court
-        }
+    If court_mapper is provided (built from user calibration), origin.court
+    and zone are populated for each shot; otherwise they remain None.
 
     Raises RuntimeError on unrecoverable errors (missing model, corrupt file).
     Returns an empty list if the video is valid but no shots were detected.
     """
-    shot_points, _ = _run_pipeline_inner(video_path)
+    shot_points, _ = _run_pipeline_inner(video_path, court_mapper)
     return shot_points
 
 
-def _run_pipeline_verbose(video_path: str) -> dict:
+def _run_pipeline_verbose(video_path: str, court_mapper: Optional[CourtMapper] = None) -> dict:
     """
     Run the full pipeline and return detailed diagnostic data.
     Used by test_cv.py. Not part of the public API contract.
@@ -765,5 +853,5 @@ def _run_pipeline_verbose(video_path: str) -> dict:
       ball_near_hoop_count, shot_events, fps, frame_count,
       frame_height, shot_points
     """
-    shot_points, diag = _run_pipeline_inner(video_path)
+    shot_points, diag = _run_pipeline_inner(video_path, court_mapper)
     return {**diag, "shot_points": shot_points}

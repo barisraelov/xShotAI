@@ -744,3 +744,41 @@ def score_shot(
         f"traj={len(trajectory)} rim={len(rim_pts)}"
     )
     return is_made, detail
+
+
+def score_shot_from_data(shot_data: "ShotData", frame_w: int, hoop_accepted_count: int) -> tuple[bool, str]:
+    """
+    Make/miss via entry rule using a pre-built ShotData (no additional YOLO inference).
+    Drop-in replacement for score_shot() when build_shot_data() has already been called.
+    """
+    from shot_data_builder import ShotData as _ShotData  # local import to avoid circular
+
+    if shot_data.hoop_tuple is None:
+        return False, "entry:no_hoop"
+
+    trajectory = shot_data.trajectory
+    y_blue, xb1, xb2 = shot_data.y_blue, shot_data.xb1, shot_data.xb2
+    cap_rect     = shot_data.cap_rect
+    confirm_rect = shot_data.confirm_rect
+    hoop_tuple   = shot_data.hoop_tuple
+
+    rim_pts, trim_meta = trim_rim_relevant_trajectory(
+        trajectory, y_blue, xb1, xb2, cap_rect, confirm_rect,
+    )
+    geom_ok, _gs, geom_reason = check_geometry(
+        hoop_tuple, rim_pts, frame_w, hoop_accepted_count,
+    )
+    if not geom_ok:
+        return False, f"entry_geom:{geom_reason}"
+    if len(rim_pts) < 2:
+        return False, "entry:insufficient_points"
+    ev_out = evaluate_entry_rule(rim_pts, y_blue, xb1, xb2, confirm_rect)
+    is_made = ev_out.get("diagnostic_result") == "MAKE"
+    detail = (
+        f"entry:{ev_out.get('reason')} "
+        f"blue={ev_out.get('blue_cross_frame')} "
+        f"confirm={ev_out.get('confirmation_frame')} "
+        f"trim_drop={trim_meta.get('late_points_dropped', 0)} "
+        f"traj={len(trajectory)} rim={len(rim_pts)}"
+    )
+    return is_made, detail
