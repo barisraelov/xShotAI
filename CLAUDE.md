@@ -4,13 +4,28 @@ xShot AI is a basketball training analysis app. A player uploads a video → get
 
 ---
 
+## Team structure (3 members)
+
+| Member | Branch | Responsibility |
+|---|---|---|
+| 1 — Performance | `performance/runtime` | Speed up analysis (caching, ONNX) — backend only |
+| 2 — Feedback | `feature/feedback-visuals` | Visual feedback + Analyzing screen — feedback.py + React |
+| **3 — Location/Mobile (THIS)** | `feature/location-mobile` | court_mapper + zone_classifier + responsive CSS + cloud deploy |
+
+> **Before any code change:** read `PROJECT_CONTEXT.md`, `xShot-prototype/analyze_result_spec.md`, `xShot-prototype/next_steps.md`.  
+> **After any backend change:** run `python backend/_run_all_validation.py` and verify shots/made/missed are unchanged.
+
+---
+
 ## Current release scope
 
 | Capability | Status |
 |---|---|
 | Shot detection + make/miss + FG% | **REAL** — CV pipeline |
-| `origin.court` (court coordinates) | **NULL** — not computed yet |
-| Zone assignment, heatmap | **NULL / EMPTY** — requires court coords |
+| `origin.court` (court coordinates) | **NULL** — task for member 3 |
+| Zone assignment (11 zones) | **NULL / EMPTY** — task for member 3 |
+| Responsive mobile UI | **MISSING** — task for member 3 |
+| Cloud deployment | **NOT DEPLOYED** — task for member 3 |
 | Multi-session, social features | **OUT OF SCOPE** |
 
 ---
@@ -58,6 +73,74 @@ The "did the ball go in?" logic lives entirely in `backend/cv_pipeline.py`. **Do
 - Never change the API contract without approval
 - Never add features outside the locked scope without a clear request
 - Read `xShot-prototype/project_brief.md` before making architectural decisions
+
+---
+
+## 🟡 Member 3 — What to build & where
+
+### Court mapping (backend)
+
+| File | Status | Notes |
+|---|---|---|
+| `backend/court_mapper.py` | **EXISTS** — has homography via 6 calibration points | Currently requires manual calibration — member 3 should make detection automatic (HoughLines) |
+| `backend/zone_classifier.py` | **TO CREATE** | Hit-test origin.court against 11 polygons from spec |
+| `backend/cv_pipeline.py` | **EXISTS** — add call after the while loop only | Wire CourtMapper + ZoneClassifier into shot_points |
+
+**11 zones** are defined in `xShot-prototype/analyze_result_spec.md` — read before writing zone_classifier.py.  
+**Fields to fill** (already in contract, currently null): `origin.court`, `zone`, `zone_aggregates`, `mapping`.  
+**Do NOT add new fields** — only populate existing ones.  
+**If detection fails** → return `None` gracefully, never crash.
+
+### Automatic court detection approach
+Use `cv2.HoughLinesP` on the first stable frame to detect court boundary lines → derive homography automatically without user calibration.  
+Fallback: if auto-detection fails → `origin.court = None`, `zone = None` for all shots.
+
+### Responsive mobile (frontend)
+
+| File | Change |
+|---|---|
+| `frontend/src/index.css` | Add `@media (max-width: 480px)` base rules |
+| `frontend/src/screens/*.css` | Per-screen mobile tweaks |
+| `frontend/src/components/BottomNav.jsx` | Already exists — verify it works on small screens |
+| `frontend/src/components/CourtMap.jsx` | Improve display when `court` data is available |
+
+Do NOT touch `App.jsx` state machine or `api.js`.
+
+### Cloud deployment
+
+Recommended: **Render.com** (free tier)
+- Backend → Web Service (FastAPI + uvicorn + `best.pt`)
+- Frontend → Static Site (Vite build)
+- Needs: `Dockerfile` at repo root, `BACKEND_URL` env var, CORS update in `main.py`
+- Update `frontend/vite.config.js` proxy from `localhost:8000` → cloud URL
+
+---
+
+## Files member 3 may touch
+
+```
+backend/court_mapper.py          ✅ modify (make auto-detection)
+backend/zone_classifier.py       ✅ create
+backend/cv_pipeline.py           ✅ add call AFTER while loop only
+backend/requirements.txt         ✅ add deps if needed
+frontend/src/index.css           ✅ responsive
+frontend/src/screens/*.css       ✅ responsive
+frontend/src/components/CourtMap.jsx  ✅ improve
+frontend/vite.config.js          ✅ cloud proxy
+Dockerfile                       ✅ create
+```
+
+## Files member 3 must NOT touch
+
+```
+backend/entry_make_miss.py       ❌ member 1
+backend/feedback.py              ❌ member 2
+backend/main.py                  ❌ no endpoint changes
+backend/origin_estimator.py      ❌ locked
+frontend/src/App.jsx             ❌ no state machine changes
+frontend/src/api.js              ❌ locked
+xShot-prototype/analyze_result_spec.md  ❌ FROZEN
+```
 
 ---
 

@@ -34,11 +34,21 @@ export default function Session({ navigate, result }) {
     )
   }
 
-  const { summary, zone_aggregates, shot_points } = result
+  const { summary, zone_aggregates, shot_points, feedback } = result
   const weak         = weakestZone(zone_aggregates)
   const breakdown    = zoneBreakdown(shot_points)
   const accuracyDeg  = `${(summary.accuracy_pct / 100 * 360).toFixed(1)}deg`
   const hasCourtData = shot_points?.some(s => s.origin?.court !== null)
+
+  const fbSummary  = feedback?.summary
+  const fbInsights = Array.isArray(feedback?.insights) ? feedback.insights : []
+  const fbRecs     = Array.isArray(feedback?.recommendations) ? feedback.recommendations : []
+  const showFeedback =
+    feedback &&
+    (fbSummary?.headline ||
+      fbSummary?.body ||
+      fbInsights.length > 0 ||
+      fbRecs.length > 0)
 
   return (
     <div className="screen-enter">
@@ -110,10 +120,48 @@ export default function Session({ navigate, result }) {
         </div>
       )}
 
+      {showFeedback && (
+        <section className="feedback-section" aria-label="Session feedback">
+          <div className="section-title">Feedback</div>
+          {(fbSummary?.headline || fbSummary?.body) && (
+            <div className="feedback-card feedback-card--summary">
+              {fbSummary?.headline && (
+                <div className="feedback-headline">{fbSummary.headline}</div>
+              )}
+              {fbSummary?.body && <p className="feedback-body">{fbSummary.body}</p>}
+            </div>
+          )}
+          {fbInsights.length > 0 && (
+            <>
+              <div className="section-title">Insights</div>
+              <div className="feedback-card">
+                <ul className="feedback-list">
+                  {fbInsights.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+          {fbRecs.length > 0 && (
+            <>
+              <div className="section-title">Recommendations</div>
+              <div className="feedback-card">
+                <ul className="feedback-list">
+                  {fbRecs.map((line, i) => (
+                    <li key={i}>{line}</li>
+                  ))}
+                </ul>
+              </div>
+            </>
+          )}
+        </section>
+      )}
+
       {hasCourtData && (
         <div style={{ display: 'flex', gap: '10px', padding: '0 20px 24px', flexWrap: 'wrap' }}>
           <button className="btn" onClick={() => navigate('heatmap')} style={{ flex: 1 }}>
-            Shot map
+            🔥 Shot map
           </button>
         </div>
       )}

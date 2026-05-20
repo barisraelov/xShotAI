@@ -31,6 +31,7 @@ from fastapi.responses import JSONResponse
 
 import cv_pipeline
 from court_mapper import CourtMapper
+from feedback import generate_feedback
 
 logger = logging.getLogger(__name__)
 
@@ -82,7 +83,7 @@ def _build_real_result(
         )
         zone_aggregates.append(z)
 
-    return {
+    out = {
         "job_id": job_id,
         "status": "completed",
         "summary": {
@@ -100,6 +101,8 @@ def _build_real_result(
             "homography_matrix":  homography_list,
         },
     }
+    out["feedback"] = generate_feedback(out)
+    return out
 
 
 # ── Background tasks ───────────────────────────────────────────────────────────

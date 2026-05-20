@@ -7,13 +7,12 @@ Architecture: rolling-window state machine adapted from
 Responsibilities:
   - Detect the hoop and basketball with a YOLO model trained on both classes.
   - Detect shot attempts via a zone state machine (up-zone → down-zone).
-  - Classify each attempt as make or miss via parabolic (or validated linear)
-    extrapolation of the ball trajectory across the rim height line.
+  - Classify each attempt as make or miss via entry_make_miss.score_shot()
+    (blue rim chord 94% + confirmation zone + shot-window trajectory rescue).
 
 Contract:
   - process_video(path) → list of ShotPoint dicts matching AnalyzeResult.shot_points.
-  - origin.court and zone are always None — court mapping requires automatic lane
-    detection (next_steps.md step 6), which is not yet implemented.
+  - When court_mapper is provided, origin.court and zone are populated per shot.
   - Returns an empty list if the video is valid but no shots were detected.
   - Raises RuntimeError on unrecoverable errors (corrupt file, model not found).
 
@@ -24,10 +23,7 @@ Model requirement:
 
 Algorithm credit:
   - Core detection logic adapted from avishah3/AI-Basketball-Shot-Detection-Tracker.
-  - Make/miss scoring upgraded to multi-point parabolic extrapolation with
-    validated-linear and insufficient-data fallbacks (Session 4).
-  - Original linear cross-check corroborated by
-    arturchichorro/bballvision (2024).
+  - Make/miss: entry rule in entry_make_miss.py (blue chord + confirmation gate).
 """
 
 from __future__ import annotations
@@ -35,7 +31,7 @@ from __future__ import annotations
 import logging
 import math
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 import cv2
 import numpy as np
@@ -43,6 +39,9 @@ import numpy as np
 from origin_estimator import OriginEstimator
 from release_estimator import ReleaseEstimator
 from court_mapper import CourtMapper
+
+import entry_make_miss
+from shot_data_builder import build_shot_data, ShotData
 
 logger = logging.getLogger(__name__)
 
@@ -97,17 +96,8 @@ ATTEMPT_CONFIRM_EVERY = 10
 # Maximum frame gap between detect_up and detect_down to constitute a valid attempt.
 ATTEMPT_MAX_FRAME_GAP = 120  # ~4 s at 30 fps — generous for slow or high-arc shots
 
-# Make/miss: interpolated x must land within ±SCORE_RIM_X_FRACTION × (hoop_width/2).
-SCORE_RIM_X_FRACTION = 0.40
-
-# Make/miss: extra pixel buffer beyond the rim edge (catches rebounds that drop in).
-SCORE_REBOUND_PX = 10
-
-# Max frame gap for a valid 2-point linear crossing pair (Tier 2 fallback).
-SCORE_MAX_CROSSING_GAP = FRAME_STRIDE * 3  # 6 frames at stride 2
-
-# Min descent-phase above-rim detections for the parabolic fit (Tier 1).
-SCORE_MIN_PARABOLIC_POINTS = 3
+# Make/miss classification: entry_make_miss.score_shot() — see entry_make_miss.py and
+# xshot_make_miss_entry_diagnostic_all/DIAGNOSTIC_RULES_SPEC.txt
 
 # Ignore shot attempts whose up_frame is before this frame index.
 # Prevents false triggers when the video starts mid-shot.
@@ -128,29 +118,6 @@ _origin_estimator = OriginEstimator(
         forward_post_up_cap=5,
     )
 )
-
-# ── Two-gate presence check (supplementary MISS→MAKE cue) ────────────────────
-#
-# When _score() returns False (MISS), _check_two_gate_presence() looks for
-# production-accepted ball detections in two gates anchored to hoop_pos[-1]:
-#
-#   hoop_top    = hcy - 0.5 * hh
-#   hoop_bottom = hcy + 0.5 * hh
-#
-#   UPPER gate: x ∈ [hcx - 0.5*hw, hcx + 0.5*hw],  y ∈ [hoop_top - hh, hoop_top]
-#   LOWER gate: same x-range,  y ∈ [hoop_bottom, hoop_bottom + hh]
-#
-# Time window (real frame indices, matches two-gate diagnostic):
-#   fi ∈ [up_frame, down_frame + BELOW_RIM_FRAME_WINDOW]
-#
-# Upgrade MISS→MAKE iff there is at least one upper hit and one lower hit with
-# min(upper_hit.frame) < lower_hit.frame for some qualifying lower hit.
-#
-# Uses only ball_pos entries already accepted by the pipeline (same as _score).
-# NEVER called when _score() returned True — may only upgrade MISS→MAKE.
-
-# Tail past down_frame for two-gate scan (must match _diag_below_rim_gate.py).
-BELOW_RIM_FRAME_WINDOW = 15
 
 # ── Weak-hoop fallback (Session 8) ───────────────────────────────────────────
 #
@@ -269,291 +236,6 @@ def _detect_down(ball_pos: list, hoop_pos: list) -> bool:
     return bcy > hcy + 0.5 * hh
 
 
-def _extract_rim_approach_points(
-    ball_pos: list, hoop_pos: list, up_frame: int,
-) -> tuple[list[tuple[int, float, float]], float]:
-    """
-    Collect ball detections above the rim from this shot's time window.
-    Returns (points, rim_y) where each point is (frame_index, cx, cy).
-
-    Uses all above-rim detections (ascending + descending) from up_frame
-    onward.  Both phases follow the same parabola, so including ascending
-    points gives a better fit when descent-phase near-rim detections are
-    sparse (which is common — YOLO often loses the ball as it overlaps
-    the hoop).
-
-    Per-frame deduplication (Most Novel Position rule):
-    When YOLO fires on two objects in the same inference frame (real ball
-    + stationary false positive), both land in ball_pos.  A ghost repeats
-    at nearly the same pixel position across many frames, so its nearest
-    neighbour in the set is another ghost copy — distance ≈ 0.  A real
-    ball in flight occupies a different position every frame — its nearest
-    neighbour is the ball at an adjacent frame of the arc.  For each frame
-    with multiple candidates, we keep the detection that is most spatially
-    distant from its nearest same-position neighbour at any other frame,
-    i.e. the most novel position.  Tiebreaker: prefer lower cy (higher in
-    image = farther above rim).
-
-    For bank shots the pre-contact and post-contact segments are different
-    parabolas.  This is a known limitation; the combined fit is still a
-    reasonable approximation for Demo v1 where bank shots are rare.
-    """
-    hcx, hcy, _, hw, hh, _ = hoop_pos[-1]
-    rim_y = hcy - 0.5 * hh
-
-    # Collect all above-rim candidates, grouped by frame index.
-    from collections import defaultdict
-    by_frame: dict = defaultdict(list)
-    for p in ball_pos:
-        if p[2] >= up_frame and p[1] < rim_y:
-            by_frame[p[2]].append((p[2], p[0], p[1]))  # (frame, cx, cy)
-
-    if not by_frame:
-        return [], rim_y
-
-    all_candidates: list = [p for pts in by_frame.values() for p in pts]
-
-    # For frames with a single detection, accept directly.
-    # For frames with multiple detections, apply Most Novel Position.
-    result = []
-    for fi in sorted(by_frame.keys()):
-        candidates = by_frame[fi]
-        if len(candidates) == 1:
-            result.append(candidates[0])
-            continue
-
-        # Positions at OTHER frames (already-accepted + remaining candidates).
-        other_positions = [
-            (p[1], p[2]) for p in all_candidates if p[0] != fi
-        ]
-
-        best = None
-        best_dist = -1.0
-        for cand in candidates:
-            if other_positions:
-                min_d = min(
-                    math.hypot(cand[1] - ox, cand[2] - oy)
-                    for ox, oy in other_positions
-                )
-            else:
-                min_d = float("inf")
-            # Tiebreak by lower cy (farthest above rim).
-            if min_d > best_dist or (min_d == best_dist and best is not None and cand[2] < best[2]):
-                best_dist = min_d
-                best = cand
-
-        if best is not None:
-            result.append(best)
-
-    return result, rim_y
-
-
-def _fit_rim_crossing(
-    points: list[tuple[int, float, float]],
-    rim_y: float,
-    hoop_pos: list,
-) -> tuple[Optional[float], str]:
-    """
-    Predict the ball's x-coordinate at the rim crossing using the best
-    available method.
-
-    Returns (predicted_cx, tier_label).  predicted_cx is None when there
-    is insufficient data.
-
-    Tier 1 — Parabolic (>= SCORE_MIN_PARABOLIC_POINTS):
-        cy(t) = a*t^2 + b*t + c   (quadratic — gravity)
-        cx(t) = d*t + e            (linear — constant horiz. velocity)
-        Solve cy(t_rim) = rim_y, predict cx(t_rim).
-        Sanity-checked: predicted_cx must be within a reasonable range
-        of the hoop centre; t_rim must be near the data range.
-
-    Tier 2 — Validated linear (2 closest-to-rim points):
-        Straight-line extrapolation, but only when the pair is close in
-        time and slopes correctly (ball falling).
-
-    Tier 3 — Insufficient data:
-        Return None (caller defaults to miss).
-    """
-    n = len(points)
-    hcx = hoop_pos[-1][0]
-    hw  = hoop_pos[-1][3]
-    sanity_margin = max(hw * 6, 100)  # generous bound for plausible cx
-
-    # ── Tier 1: parabolic ────────────────────────────────────────────
-    if n >= SCORE_MIN_PARABOLIC_POINTS:
-        ts  = np.array([p[0] for p in points], dtype=float)
-        cxs = np.array([p[1] for p in points], dtype=float)
-        cys = np.array([p[2] for p in points], dtype=float)
-
-        cy_coeffs = np.polyfit(ts, cys, 2)  # a, b, c
-        a, b, c = cy_coeffs
-
-        if abs(a) < 1e-12:
-            pass  # degenerate quadratic — fall through
-        else:
-            disc = b * b - 4.0 * a * (c - rim_y)
-            if disc >= 0:
-                sqrt_disc = math.sqrt(disc)
-                t1 = (-b + sqrt_disc) / (2.0 * a)
-                t2 = (-b - sqrt_disc) / (2.0 * a)
-                t_rim = max(t1, t2)
-
-                t_max_data = float(ts[-1])
-                t_min_data = float(ts[0])
-                if t_rim < t_min_data or t_rim > t_max_data + (t_max_data - t_min_data + 10):
-                    logger.debug("Parabolic t_rim=%.1f outside data range [%.0f..%.0f], rejecting",
-                                 t_rim, t_min_data, t_max_data)
-                else:
-                    cx_coeffs = np.polyfit(ts, cxs, 1)
-                    predicted_cx = float(np.polyval(cx_coeffs, t_rim))
-                    if abs(predicted_cx - hcx) <= sanity_margin:
-                        return predicted_cx, f"parabolic({n}pts)"
-                    logger.debug("Parabolic pred_cx=%.1f too far from hoop cx=%.1f, rejecting",
-                                 predicted_cx, hcx)
-
-    # ── Tier 2: validated linear (2 closest-to-rim points) ───────────
-    if n >= 2:
-        p_a = points[-2]
-        p_b = points[-1]
-        frame_gap = abs(p_b[0] - p_a[0])
-        dy = p_b[2] - p_a[2]
-
-        if frame_gap <= SCORE_MAX_CROSSING_GAP and dy > 0:
-            dt = float(p_b[0] - p_a[0])
-            if dt != 0:
-                slope_cy = (p_b[2] - p_a[2]) / dt
-                slope_cx = (p_b[1] - p_a[1]) / dt
-                dt_rim = (rim_y - p_b[2]) / slope_cy
-                predicted_cx = p_b[1] + slope_cx * dt_rim
-                if abs(predicted_cx - hcx) <= sanity_margin:
-                    return float(predicted_cx), f"linear({frame_gap}f)"
-
-    # ── Tier 3 ───────────────────────────────────────────────────────
-    return None, f"no_crossing({n}pts)"
-
-
-def _check_rim_crossing(predicted_cx: float, hoop_pos: list) -> bool:
-    """Return True if predicted_cx falls inside the rim opening."""
-    hcx = hoop_pos[-1][0]
-    hw  = hoop_pos[-1][3]
-    rim_x1 = hcx - SCORE_RIM_X_FRACTION * hw - SCORE_REBOUND_PX
-    rim_x2 = hcx + SCORE_RIM_X_FRACTION * hw + SCORE_REBOUND_PX
-    return rim_x1 < predicted_cx < rim_x2
-
-
-def _two_gate_rectangles(hcx: float, hcy: float, hw: float, hh: float):
-    """Return (upper_rect, lower_rect) as (x1,y1,x2,y2), diagnostic geometry."""
-    hoop_top = hcy - 0.5 * hh
-    hoop_bottom = hcy + 0.5 * hh
-    x1 = hcx - 0.5 * hw
-    x2 = hcx + 0.5 * hw
-    upper = (x1, hoop_top - hh, x2, hoop_top)
-    lower = (x1, hoop_bottom, x2, hoop_bottom + hh)
-    return upper, lower
-
-
-def _point_in_gate(cx: float, cy: float, gate: tuple) -> bool:
-    x1, y1, x2, y2 = gate
-    return x1 < cx < x2 and y1 < cy < y2
-
-
-def _check_two_gate_presence(
-    ball_pos: list, hoop_pos: list, up_frame: int, down_frame: int
-) -> tuple[bool, str]:
-    """
-    Supplementary two-gate presence check.  Called only when _score() returned
-    False (MISS).  Uses production ball_pos only.
-
-    Returns (upgraded: bool, detail: str) suitable for appending to score_detail.
-
-    Never downgrades MAKE → MISS (callers must only invoke when _score() False).
-    """
-    if not hoop_pos:
-        return False, "no_hoop"
-
-    hcx, hcy, _, hw, hh, _ = hoop_pos[-1]
-    upper_g, lower_g = _two_gate_rectangles(hcx, hcy, hw, hh)
-    t_hi = down_frame + BELOW_RIM_FRAME_WINDOW
-
-    upper_hits: list[tuple[int, float, float]] = []
-    lower_hits: list[tuple[int, float, float]] = []
-
-    for p in ball_pos:
-        cx, cy, fi = p[0], p[1], p[2]
-        if not (up_frame <= fi <= t_hi):
-            continue
-        if _point_in_gate(cx, cy, upper_g):
-            upper_hits.append((fi, cx, cy))
-        if _point_in_gate(cx, cy, lower_g):
-            lower_hits.append((fi, cx, cy))
-
-    gates_desc = (
-        f"upper_y=[{upper_g[1]:.0f}..{upper_g[3]:.0f}]"
-        f" lower_y=[{lower_g[1]:.0f}..{lower_g[3]:.0f}]"
-        f" win=[{up_frame}..{t_hi}]"
-    )
-
-    if not upper_hits and not lower_hits:
-        return False, f"no_hits  {gates_desc}"
-
-    if upper_hits and not lower_hits:
-        fs_u = sorted({h[0] for h in upper_hits})
-        return False, f"upper_only  frames_upper={fs_u}  {gates_desc}"
-
-    if lower_hits and not upper_hits:
-        fs_l = sorted({h[0] for h in lower_hits})
-        return False, f"lower_only  frames_lower={fs_l}  {gates_desc}"
-
-    min_upper_fi = min(h[0] for h in upper_hits)
-    lowers_after = [h for h in lower_hits if h[0] > min_upper_fi]
-    if not lowers_after:
-        fs_u = sorted({h[0] for h in upper_hits})
-        fs_l = sorted({h[0] for h in lower_hits})
-        return (
-            False,
-            f"bad_order  frames_upper={fs_u} frames_lower={fs_l}"
-            f"  {gates_desc}",
-        )
-
-    first_lower_after = min(lowers_after, key=lambda h: h[0])
-    return (
-        True,
-        f"seq  upper_min_f={min_upper_fi}"
-        f"  lower_f={first_lower_after[0]}  {gates_desc}",
-    )
-
-
-def _score(ball_pos: list, hoop_pos: list, up_frame: int) -> tuple[bool, str]:
-    """
-    Make/miss classification via multi-point trajectory extrapolation.
-
-    Uses descent-phase ball detections near the rim to predict where the
-    ball crosses the rim plane, then checks whether that x-coordinate
-    falls inside the rim opening.
-
-    Returns (is_made, score_detail) where score_detail is a human-readable
-    string describing which tier was used and key values (for debug logging).
-    """
-    if not hoop_pos or len(ball_pos) < 2:
-        return False, "no_data"
-
-    points, rim_y = _extract_rim_approach_points(ball_pos, hoop_pos, up_frame)
-    predicted_cx, tier = _fit_rim_crossing(points, rim_y, hoop_pos)
-
-    if predicted_cx is None:
-        return False, tier
-
-    is_made = _check_rim_crossing(predicted_cx, hoop_pos)
-
-    hcx = hoop_pos[-1][0]
-    hw  = hoop_pos[-1][3]
-    rim_x1 = hcx - SCORE_RIM_X_FRACTION * hw - SCORE_REBOUND_PX
-    rim_x2 = hcx + SCORE_RIM_X_FRACTION * hw + SCORE_REBOUND_PX
-    detail = (
-        f"{tier}  pred_cx={predicted_cx:.1f}  "
-        f"rim=[{rim_x1:.1f}..{rim_x2:.1f}]"
-    )
-    return is_made, detail
 
 
 def _find_apex(ball_pos: list, up_frame: int, down_frame: int) -> Optional[tuple]:
@@ -639,6 +321,10 @@ def _run_state_machine_with_fallback(
     all_ball_raw: list,
     fallback_hoop_tuple: tuple,
     frame_count: int,
+    video_path: str,
+    model: Any,
+    frame_width: int,
+    hoop_accepted_count: int,
 ) -> list[dict]:
     """
     Re-run the shot state machine over the stored ball detections from the main
@@ -694,16 +380,11 @@ def _run_state_machine_with_fallback(
                         up_frame, MIN_FIRST_SHOT_FRAME,
                     )
                 elif down_frame - up_frame <= ATTEMPT_MAX_FRAME_GAP:
-                    is_made, score_detail = _score(ball_pos, hoop_pos, up_frame)
-                    if not is_made:
-                        tg_ok, tg_detail = _check_two_gate_presence(
-                            ball_pos, hoop_pos, up_frame, down_frame
-                        )
-                        if tg_ok:
-                            is_made = True
-                            score_detail += "  +two_gate:" + tg_detail
-                        else:
-                            score_detail += "  two_gate:" + tg_detail
+                    is_made, score_detail = entry_make_miss.score_shot(
+                        video_path, model, ball_pos, hoop_pos,
+                        up_frame, down_frame, frame_count, frame_width,
+                        hoop_accepted_count,
+                    )
                     apex = _find_apex(ball_pos, up_frame, down_frame)
                     if apex is not None:
                         ball_window = [
@@ -804,6 +485,7 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
 
     fps          = cap.get(cv2.CAP_PROP_FPS) or 30.0
     frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    frame_width  = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
     frame_count  = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
     logger.info(
         "Processing video: %s  fps=%.1f  frames=%d  h=%d",
@@ -918,48 +600,33 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
                         up_frame, MIN_FIRST_SHOT_FRAME,
                     )
                 elif down_frame - up_frame <= ATTEMPT_MAX_FRAME_GAP:
-                    is_made, score_detail = _score(ball_pos, hoop_pos, up_frame)
-                    if not is_made:
-                        tg_ok, tg_detail = _check_two_gate_presence(
-                            ball_pos, hoop_pos, up_frame, down_frame
-                        )
-                        if tg_ok:
-                            is_made = True
-                            score_detail += "  +two_gate:" + tg_detail
-                        else:
-                            score_detail += "  two_gate:" + tg_detail
+                    ball_window = [
+                        p for p in ball_pos if up_frame <= p[2] <= down_frame
+                    ]
+                    ev_dict = {
+                        "ball_points_window": ball_window,
+                        "ball_pos_snapshot":  list(ball_pos),
+                        "up_frame":           up_frame,
+                        "down_frame":         down_frame,
+                        "hoop_stable": list(hoop_pos[-1]) if hoop_pos else None,
+                        "_video_path": str(path),
+                    }
+                    shot_data = build_shot_data(
+                        str(path), model, ev_dict,
+                        up_frame, down_frame, frame_count, frame_width,
+                        hoop_accepted_count,
+                    )
+                    is_made, score_detail = entry_make_miss.score_shot_from_data(
+                        shot_data, frame_width, hoop_accepted_count,
+                    )
                     apex = _find_apex(ball_pos, up_frame, down_frame)
                     if apex is not None:
-                        # Phase 1: capture raw trajectory data for OriginEstimator.
-                        # ball_pos at this point still contains the rolling window,
-                        # including pre-up_frame detections (ball at shooter level).
-                        # We snapshot it now before the window rolls further.
-                        ball_window = [
-                            p for p in ball_pos
-                            if up_frame <= p[2] <= down_frame
-                        ]
-                        shot_events.append({
-                            # ── Legacy fields (apex) ──────────────────────────
-                            # Used ONLY by test_cv.py debug video and per-shot
-                            # table.  NOT written to AnalyzeResult.shot_points.
-                            # origin.pixel in the contract is computed by
-                            # OriginEstimator below (trajectory-anchor, Phase 2).
-                            "frame_index": apex[2],
-                            "u":           int(apex[0]),
-                            "v":           int(apex[1]),
-                            # ── Result (shared) ───────────────────────────────
-                            "result": "made" if is_made else "missed",
-                            # ── Raw data for OriginEstimator (internal only) ───
-                            # Never propagated to the AnalyzeResult contract.
-                            # Enables trajectory-anchor origin now and the future
-                            # release+pose estimator (Phase 6) without re-running
-                            # the pipeline.
-                            "ball_points_window": ball_window,
-                            "ball_pos_snapshot":  list(ball_pos),
-                            "up_frame":           up_frame,
-                            "down_frame":         down_frame,
-                            "hoop_stable": list(hoop_pos[-1]) if hoop_pos else None,
-                        })
+                        ev_dict["frame_index"] = apex[2]
+                        ev_dict["u"]           = int(apex[0])
+                        ev_dict["v"]           = int(apex[1])
+                        ev_dict["result"]      = "made" if is_made else "missed"
+                        ev_dict["_shot_data"]  = shot_data
+                        shot_events.append(ev_dict)
                         logger.info(
                             "Shot at frame %d: %s  [%s]  "
                             "(up=%d  down=%d  ball_window=%d pts)",
@@ -990,7 +657,13 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
                 len({d[2] for d in weak_hoop_raw}),
             )
             shot_events = _run_state_machine_with_fallback(
-                all_ball_raw, fb_tuple, frame_count
+                all_ball_raw,
+                fb_tuple,
+                frame_count,
+                str(path),
+                model,
+                frame_width,
+                hoop_accepted_count,
             )
             hoop_fallback_used = True
             # Populate all_hoop_pos from the fallback so stable_hoop and the
@@ -1047,13 +720,7 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
     # _find_apex is still used to drive the debug-video markers in test_cv.py
     # (stored as legacy ev["u"]/ev["v"]/ev["frame_index"]).  It is NOT used here.
     # Internal-only context for OriginEstimator plug-ins (e.g., ReleaseEstimator).
-    for ev in shot_events:
-        ev["_video_path"] = str(path)
-
-    # Load the person-detection model once if we need floor-position correction.
-    # yolov8n.pt (COCO) detects persons (class 0) whose feet are on the floor —
-    # unlike origin.pixel which tracks the ball in the air and can't be mapped
-    # through a floor-plane homography correctly.
+    # Load the person-detection model once — used by shot_data_builder for feet detection.
     _person_model = None
     if court_mapper is not None:
         person_model_path = Path(__file__).parent / "yolov8n.pt"
@@ -1064,6 +731,17 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
         else:
             logger.warning("yolov8n.pt not found — falling back to ball pixel for court mapping")
 
+    # When court_mapper is active, rebuild shot_data with person detection included.
+    # shot_data was built during the confirmation loop without person_model; rebuild
+    # it now if court_mapper is present so person_feet is populated.
+    if court_mapper is not None and _person_model is not None:
+        for ev in shot_events:
+            sd: ShotData = ev.get("_shot_data")
+            if sd is not None and sd.person_feet is None:
+                sd.person_feet = __import__("shot_data_builder")._scan_person_feet(
+                    str(path), ev["up_frame"], _person_model
+                )
+
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
         origin_pixel = _origin_estimator.estimate(ev)
@@ -1071,10 +749,13 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
         court = None
         zone  = None
         if court_mapper is not None:
-            # Prefer feet position (on the floor) over ball position (in the air).
-            floor_u, floor_v = _detect_player_feet(
-                ev["_video_path"], ev["up_frame"], _person_model
-            )
+            # Use person_feet from ShotData (pre-shot person scan) when available.
+            sd = ev.get("_shot_data")
+            floor_u: Optional[int] = None
+            floor_v: Optional[int] = None
+            if sd is not None and sd.person_feet is not None:
+                floor_u, floor_v = sd.person_feet
+
             using_ball_pixel = False
             if floor_u is not None:
                 logger.info("Shot s%03d feet pixel = (%d, %d)", i, floor_u, floor_v)
@@ -1095,6 +776,14 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
                 court, zone = court_mapper.map_shot(floor_u, floor_v, pixel_side_ref=pixel_side_ref)
                 logger.info("Shot s%03d court = %s  zone = %s", i, court, zone)
 
+        # Trajectory metadata — arc height and apex pixel for debug/UI.
+        hs     = ev.get("hoop_stable")          # [cx, cy, frame_idx, w, h, conf]
+        apex_v = ev.get("v")
+        arc_px: Optional[float] = None
+        if hs is not None and apex_v is not None:
+            rim_top_y = hs[1] - hs[4] / 2
+            arc_px = round(rim_top_y - apex_v, 1)
+
         shot_points.append({
             "shot_id": f"s{i:03d}",
             "result":  ev["result"],
@@ -1103,9 +792,20 @@ def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = N
                 "court": court,
             },
             "zone": zone,
+            "trajectory": {
+                "arc_height_px": arc_px,
+                "apex_pixel": {
+                    "u":           ev["u"],
+                    "v":           ev["v"],
+                    "frame_index": ev["frame_index"],
+                },
+                "up_frame":   ev["up_frame"],
+                "down_frame": ev["down_frame"],
+            },
         })
 
     diag: dict = {
+        "hoop_fallback_used":   hoop_fallback_used,
         "hoop_raw_count":       hoop_raw_count,
         "hoop_accepted_count":  hoop_accepted_count,
         "hoop_stable_bbox":     stable_hoop,       # (x, y, w, h) top-left
