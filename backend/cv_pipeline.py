@@ -468,6 +468,15 @@ def _detect_player_feet(
 # ── Core pipeline ─────────────────────────────────────────────────────────────
 
 def _run_pipeline_inner(video_path: str, court_mapper: Optional[CourtMapper] = None) -> tuple[list[dict], dict]:
+    """Default: single-pass runtime. Set XSHOT_LEGACY_PIPELINE=1 for double-pass rollback."""
+    import os
+    if os.environ.get("XSHOT_LEGACY_PIPELINE", "0") == "1":
+        return _run_pipeline_inner_legacy(video_path, court_mapper)
+    from single_pass_pipeline import run as single_pass_run
+    return single_pass_run(video_path, court_mapper)
+
+
+def _run_pipeline_inner_legacy(video_path: str, court_mapper: Optional[CourtMapper] = None) -> tuple[list[dict], dict]:
     """
     Single-pass pipeline: process video frame by frame, maintaining rolling
     state for hoop and ball positions, running the shot state machine, and

@@ -38,6 +38,28 @@ const DEMO_STUB = {
     { polygon_id: 'extended',           range_class: 'extended',    label: 'Extended range',  attempts: 1, made: 0, accuracy_pct: 0.0 },
   ],
   mapping: { court_norm_version: '1.0', polygon_version: '1.0', y_flip_applied: false, homography_matrix: null },
+  feedback: {
+    summary: {
+      headline: '6/10 makes (60%)',
+      body: 'Session summary: 6 made, 4 missed over 10 detected attempts.',
+    },
+    insights: [
+      'Session accuracy at 60% — room to push into the next tier.',
+      'More misses than makes (4 vs 6).',
+      'Arc height varied noticeably between attempts — aim for a more consistent release arc.',
+      'Shot timing was inconsistent — the apex arrived at different points in the up-to-down window across attempts.',
+    ],
+    recommendations: [
+      'Focus on repeatable footwork and release timing between attempts.',
+      'Repeat form shots aiming for the same target arc on each release.',
+      'Slow the motion slightly and keep a repeatable release rhythm from shot to shot.',
+    ],
+    metrics: {
+      sample_shots: 10, reported_made: 6, reported_missed: 4,
+      reported_accuracy_pct: 60.0, longest_make_streak: 2, longest_miss_streak: 2,
+      trajectory_shots_with_arc_height: 10, trajectory_mean_arc_height_px: 71.4,
+    },
+  },
 }
 
 function demoView() {

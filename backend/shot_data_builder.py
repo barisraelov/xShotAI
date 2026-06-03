@@ -142,3 +142,41 @@ def _scan_person_feet(
 
     cap.release()
     return (foot_u, foot_v) if foot_u is not None else None
+
+
+def build_shot_data_from_accumulator(
+    acc: Any,
+    ev: dict,
+    up_frame: int,
+    down_frame: int,
+    frame_count: int,
+    hoop_accepted_count: int,
+    person_model: Optional[Any] = None,
+    video_path: str | Path | None = None,
+    next_up_frame: Optional[int] = None,
+) -> ShotData:
+    """Package ShotData from TrajectoryAccumulator.finalize output (no video reopen)."""
+    from entry_make_miss import blue_rim_chord, capture_zone_rect, confirmation_zone_rect, shot_frame_end
+
+    sd = ShotData()
+    if not ev.get("hoop_stable"):
+        return sd
+
+    hoop_tuple = tuple(ev["hoop_stable"])
+    f_end = shot_frame_end(up_frame, down_frame, next_up_frame, frame_count)
+    traj, sel, ct, sc = acc.finalize(ev, down_frame, f_end)
+
+    sd.hoop_tuple = hoop_tuple
+    sd.f_end = f_end
+    sd.y_blue, sd.xb1, sd.xb2 = blue_rim_chord(hoop_tuple)
+    sd.cap_rect = capture_zone_rect(hoop_tuple)
+    sd.confirm_rect = confirmation_zone_rect(hoop_tuple, sd.y_blue)
+    sd.trajectory = traj
+    sd.sel_points = sel
+    sd.capture_trigger = ct
+    sd.status_counts = sc
+
+    if person_model is not None and video_path is not None:
+        sd.person_feet = _scan_person_feet(video_path, up_frame, person_model)
+
+    return sd
