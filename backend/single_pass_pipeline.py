@@ -407,14 +407,50 @@ def run(
             int(float(np.median([p[4] for p in all_hoop_pos]))),
         )
 
+    # Load person model and scan feet positions for court mapping.
+    # person_feet gives a floor-level pixel so the floor-plane homography
+    # produces accurate court coordinates — unlike the aerial ball pixel.
+    _person_model = None
+    if court_mapper is not None:
+        from ultralytics import YOLO as _YOLO
+        person_model_path = Path(__file__).parent / "yolov8n.pt"
+        if person_model_path.exists():
+            _person_model = _YOLO(str(person_model_path))
+        else:
+            logger.warning("yolov8n.pt not found — falling back to ball pixel for court mapping")
+
+    if court_mapper is not None and _person_model is not None:
+        from shot_data_builder import _scan_person_feet
+        for ev in shot_events:
+            sd = ev.get("_shot_data")
+            if sd is not None and sd.person_feet is None:
+                sd.person_feet = _scan_person_feet(str(path), ev["up_frame"], _person_model)
+
     shot_points: list[dict] = []
     for i, ev in enumerate(shot_events, start=1):
         origin_pixel = _origin_from_event(ev)
         court = zone = None
-        if court_mapper is not None and origin_pixel:
-            court, zone = court_mapper.map_shot(
-                origin_pixel.get("u"), origin_pixel.get("v"),
-            )
+        if court_mapper is not None:
+            sd = ev.get("_shot_data")
+            floor_u: Optional[int] = None
+            floor_v: Optional[int] = None
+            using_ball_pixel = False
+
+            if sd is not None and sd.person_feet is not None:
+                floor_u, floor_v = sd.person_feet
+                logger.info("Shot s%03d feet pixel = (%d, %d)", i, floor_u, floor_v)
+            elif origin_pixel is not None:
+                floor_u = origin_pixel.get("u")
+                floor_v = origin_pixel.get("v")
+                using_ball_pixel = True
+                logger.info("Shot s%03d no person found — using ball pixel (%s, %s)", i, floor_u, floor_v)
+
+            if floor_u is not None and floor_v is not None:
+                hoop = ev.get("hoop_stable")
+                hoop_cx = int(hoop[0]) if hoop else None
+                pixel_side_ref = (floor_u, hoop_cx) if using_ball_pixel and hoop_cx is not None else None
+                court, zone = court_mapper.map_shot(floor_u, floor_v, pixel_side_ref=pixel_side_ref)
+                logger.info("Shot s%03d court = %s  zone = %s", i, court, zone)
 
         hs = ev.get("hoop_stable")
         apex_v = ev.get("v")
