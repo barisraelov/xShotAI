@@ -342,7 +342,9 @@ def run(
                 is_made, score_detail = entry_make_miss.score_shot_from_data(
                     shot_data, frame_width, hoop_accepted_count,
                 )
-                apex = cv_pipeline._find_apex(ball_pos, uf, df)
+                apex = cv_pipeline._find_apex_for_shot(
+                    shot_data, ev_dict, uf, df, ball_pos,
+                )
                 if apex is not None:
                     ev_dict["frame_index"] = apex[2]
                     ev_dict["u"] = int(apex[0])
@@ -416,9 +418,7 @@ def run(
 
         hs = ev.get("hoop_stable")
         apex_v = ev.get("v")
-        arc_px = None
-        if hs is not None and apex_v is not None:
-            arc_px = round((hs[1] - hs[4] / 2) - apex_v, 1)
+        arc_px = cv_pipeline._arc_height_from_hoop_and_apex(hs, apex_v)
 
         shot_points.append({
             "shot_id": f"s{i:03d}",
