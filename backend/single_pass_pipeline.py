@@ -110,7 +110,7 @@ def _run_yolo_for_sm(
 def _origin_from_event(ev: dict) -> dict:
     if ev.get("origin_pixel_adaptive"):
         return ev["origin_pixel_adaptive"]
-    return cv_pipeline._origin_estimator._trajectory_anchor(ev)
+    return cv_pipeline._origin_estimator.estimate(ev)
 
 
 def run(
@@ -120,6 +120,16 @@ def run(
     path = Path(video_path)
     if not path.exists():
         raise RuntimeError(f"Video file not found: {video_path}")
+
+    # Load person model for player-feet floor detection when court mapping is active.
+    # Mirrors the legacy pipeline: needed to get accurate floor-plane origin.
+    _person_model = None
+    if court_mapper is not None:
+        try:
+            from ultralytics import YOLO
+            _person_model = YOLO(str(Path(__file__).parent / "yolov8n.pt"))
+        except Exception:
+            pass
 
     cap = cv2.VideoCapture(str(path))
     if not cap.isOpened():
@@ -339,7 +349,9 @@ def run(
 
                 shot_data = build_shot_data_from_accumulator(
                     shot.acc, ev_dict, uf, df, frame_count,
-                    hoop_accepted_count, video_path=str(path),
+                    hoop_accepted_count,
+                    person_model=_person_model,
+                    video_path=str(path),
                 )
                 is_made, score_detail = entry_make_miss.score_shot_from_data(
                     shot_data, frame_width, hoop_accepted_count,
