@@ -412,9 +412,22 @@ def run(
         origin_pixel = _origin_from_event(ev)
         court = zone = None
         if court_mapper is not None and origin_pixel:
-            court, zone = court_mapper.map_shot(
-                origin_pixel.get("u"), origin_pixel.get("v"),
-            )
+            sd = ev.get("_shot_data")
+            floor_u: Optional[int] = None
+            floor_v: Optional[int] = None
+            using_ball_pixel = False
+            if sd is not None and sd.person_feet is not None:
+                floor_u, floor_v = sd.person_feet
+            else:
+                floor_u = origin_pixel.get("u")
+                floor_v = origin_pixel.get("v")
+                using_ball_pixel = True
+
+            if floor_u is not None and floor_v is not None:
+                hoop = ev.get("hoop_stable")
+                hoop_cx = int(hoop[0]) if hoop else None
+                pixel_side_ref = (floor_u, hoop_cx) if using_ball_pixel and hoop_cx is not None else None
+                court, zone = court_mapper.map_shot(floor_u, floor_v, pixel_side_ref=pixel_side_ref)
 
         hs = ev.get("hoop_stable")
         apex_v = ev.get("v")
