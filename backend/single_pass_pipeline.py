@@ -47,6 +47,7 @@ class OpenShot:
     f_end: Optional[int] = None
     ready_to_score: bool = False
     origin_pixel_adaptive: Optional[dict] = None
+    ball_snapshot_at_up: list = None  # ball_pos captured at up_frame for OriginEstimator
 
 
 @dataclass
@@ -267,6 +268,7 @@ def run(
                         acc=acc,
                         up_frame=up_frame,
                         origin_pixel_adaptive=rel,
+                        ball_snapshot_at_up=list(ball_pos),
                     ))
 
             if up and not down:
@@ -326,7 +328,7 @@ def run(
                 uf, df = shot.up_frame, int(shot.down_frame)
                 ev_dict = {
                     "ball_points_window": [p for p in ball_pos if uf <= p[2] <= df],
-                    "ball_pos_snapshot": list(ball_pos),
+                    "ball_pos_snapshot": shot.ball_snapshot_at_up or list(ball_pos),
                     "up_frame": uf,
                     "down_frame": df,
                     "hoop_stable": list(hoop_pos[-1]) if hoop_pos else None,
