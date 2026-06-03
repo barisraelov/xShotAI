@@ -250,6 +250,58 @@ def _find_apex(ball_pos: list, up_frame: int, down_frame: int) -> Optional[tuple
     return ball_pos[-1] if ball_pos else None
 
 
+def _find_apex_from_trajectory(
+    trajectory: list[tuple[int, float, float]],
+) -> Optional[tuple]:
+    """Highest ball point from per-shot trajectory cache (frame, cx, cy)."""
+    if not trajectory:
+        return None
+    frame, cx, cy = min(trajectory, key=lambda p: p[2])
+    return (cx, cy, frame)
+
+
+def _find_apex_from_ball_window(ball_window: list) -> Optional[tuple]:
+    """Highest point from production ball window tuples (cx, cy, frame, ...)."""
+    if not ball_window:
+        return None
+    p = min(ball_window, key=lambda pt: pt[1])
+    return (p[0], p[1], int(p[2]))
+
+
+def _find_apex_for_shot(
+    shot_data: Optional[ShotData],
+    ev: dict,
+    up_frame: int,
+    down_frame: int,
+    ball_pos: list,
+) -> Optional[tuple]:
+    """
+    Apex for feedback metadata: prefer ShotData.trajectory (full shot cache),
+    then ev ball_points_window, then rolling ball_pos (legacy fallback).
+    No extra YOLO or video I/O.
+    """
+    if shot_data is not None and shot_data.trajectory:
+        apex = _find_apex_from_trajectory(shot_data.trajectory)
+        if apex is not None:
+            return apex
+    window = ev.get("ball_points_window") or []
+    apex = _find_apex_from_ball_window(window)
+    if apex is not None:
+        return apex
+    return _find_apex(ball_pos, up_frame, down_frame)
+
+
+def _arc_height_from_hoop_and_apex(
+    hoop_stable: Optional[list],
+    apex_v: Optional[float],
+) -> Optional[float]:
+    """rim_top_y − apex_v in image coordinates (positive = apex above rim line)."""
+    if hoop_stable is None or apex_v is None:
+        return None
+    rim_top_y = hoop_stable[1] - hoop_stable[4] / 2
+    return round(rim_top_y - apex_v, 1)
+
+
 # ── Weak-hoop fallback helpers ────────────────────────────────────────────────
 
 def _compute_hoop_fallback_consensus(
@@ -385,11 +437,17 @@ def _run_state_machine_with_fallback(
                         up_frame, down_frame, frame_count, frame_width,
                         hoop_accepted_count,
                     )
-                    apex = _find_apex(ball_pos, up_frame, down_frame)
+                    ball_window = [
+                        p for p in ball_pos if up_frame <= p[2] <= down_frame
+                    ]
+                    apex = _find_apex_for_shot(
+                        None,
+                        {"ball_points_window": ball_window},
+                        up_frame,
+                        down_frame,
+                        ball_pos,
+                    )
                     if apex is not None:
-                        ball_window = [
-                            p for p in ball_pos if up_frame <= p[2] <= down_frame
-                        ]
                         shot_events.append({
                             "frame_index": apex[2],
                             "u":           int(apex[0]),
@@ -628,7 +686,9 @@ def _run_pipeline_inner_legacy(video_path: str, court_mapper: Optional[CourtMapp
                     is_made, score_detail = entry_make_miss.score_shot_from_data(
                         shot_data, frame_width, hoop_accepted_count,
                     )
-                    apex = _find_apex(ball_pos, up_frame, down_frame)
+                    apex = _find_apex_for_shot(
+                        shot_data, ev_dict, up_frame, down_frame, ball_pos,
+                    )
                     if apex is not None:
                         ev_dict["frame_index"] = apex[2]
                         ev_dict["u"]           = int(apex[0])
@@ -788,10 +848,7 @@ def _run_pipeline_inner_legacy(video_path: str, court_mapper: Optional[CourtMapp
         # Trajectory metadata — arc height and apex pixel for debug/UI.
         hs     = ev.get("hoop_stable")          # [cx, cy, frame_idx, w, h, conf]
         apex_v = ev.get("v")
-        arc_px: Optional[float] = None
-        if hs is not None and apex_v is not None:
-            rim_top_y = hs[1] - hs[4] / 2
-            arc_px = round(rim_top_y - apex_v, 1)
+        arc_px = _arc_height_from_hoop_and_apex(hs, apex_v)
 
         shot_points.append({
             "shot_id": f"s{i:03d}",

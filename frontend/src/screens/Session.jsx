@@ -1,5 +1,7 @@
+import { useState } from 'react'
 import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
+import VisualFeedback, { VisualSessionSummary } from '../components/VisualFeedback'
 import './Session.css'
 
 // Find the zone with the most attempts and lowest accuracy to produce a tip
@@ -10,6 +12,86 @@ function weakestZone(zoneAggregates) {
   return [...withAttempts].sort(
     (a, b) => a.accuracy_pct - b.accuracy_pct || b.attempts - a.attempts
   )[0]
+}
+
+// Shared category labels so an Insight and the Recommendation it drives carry
+// the same badge + colour (Evidence → Insight → Recommendation).
+const FB_CATEGORIES = {
+  consistency: 'Consistency',
+  fatigue: 'Fatigue',
+  timing: 'Timing',
+  sequence: 'Sequence',
+  arc: 'Arc',
+  accuracy: 'Accuracy',
+}
+
+function feedbackCategory(text) {
+  const t = String(text).toLowerCase()
+  if (t.includes('target arc') || t.includes('consistent') || t.includes('varied') || t.includes('stable'))
+    return 'consistency'
+  if (t.includes('second half') || t.includes('later in the session') || t.includes('lift') ||
+      t.includes('flatten') || t.includes('breather') || t.includes('energy') ||
+      t.includes('hydration') || t.includes('fatigue'))
+    return 'fatigue'
+  if (t.includes('rhythm') || t.includes('release timing') || t.includes('slow the motion') ||
+      t.includes('footwork') || t.includes('timing'))
+    return 'timing'
+  if (t.includes('streak') || t.includes('finished hot') || t.includes('cold finish') ||
+      t.includes('consecutive') || t.includes('reset') || t.includes('misses'))
+    return 'sequence'
+  if (t.includes('higher arc') || t.includes('did not clearly') || t.includes('arc'))
+    return 'arc'
+  if (t.includes('accuracy') || t.includes('makes') || t.includes('fundamentals') ||
+      t.includes('high-percentage') || t.includes('volume'))
+    return 'accuracy'
+  return null
+}
+
+function CategoryBadge({ cat }) {
+  if (!cat) return null
+  return <span className={`fb-cat fb-cat--${cat}`}>{FB_CATEGORIES[cat]}</span>
+}
+
+function TopTakeaways({ insights }) {
+  if (!insights.length) return null
+  return (
+    <section className="feedback-story-section">
+      <div className="story-kicker">Key takeaways</div>
+      <h3 className="story-title">What stood out most</h3>
+      <div className="takeaway-list">
+        {insights.slice(0, 3).map((line, i) => (
+          <div className="takeaway-card" key={i}>
+            <span className="takeaway-num">{i + 1}</span>
+            <p>
+              <CategoryBadge cat={feedbackCategory(line)} />
+              {line}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function FeedbackPanel({ title, subtitle, children, defaultOpen = true }) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <section className="feedback-panel">
+      <button
+        type="button"
+        className="feedback-panel-toggle"
+        onClick={() => setOpen(v => !v)}
+        aria-expanded={open}
+      >
+        <span>
+          <span className="story-kicker">{subtitle}</span>
+          <span className="feedback-panel-title">{title}</span>
+        </span>
+        <span className={`panel-chevron${open ? ' is-open' : ''}`}>⌄</span>
+      </button>
+      {open && <div className="feedback-panel-body">{children}</div>}
+    </section>
+  )
 }
 
 // Derive 2pt / 3pt stats directly from shot_points zone data
@@ -57,104 +139,134 @@ export default function Session({ navigate, result }) {
         <button className="icon-btn" onClick={() => navigate('dashboard')}>☰</button>
       </div>
 
-      <div className="stats-hero">
-        <div>
-          <div className="big">{summary.total_shots}</div>
-          <div className="lbl">Shots</div>
-        </div>
-        <div>
-          <div className="big" style={{ color: 'var(--green)' }}>{summary.made}</div>
-          <div className="lbl">Made</div>
-        </div>
-        <div>
-          <div className="big" style={{ color: 'var(--red)' }}>{summary.missed}</div>
-          <div className="lbl">Missed</div>
-        </div>
-      </div>
+      <section className="session-summary-section" aria-label="Session summary">
+        <div className="story-kicker">Session summary</div>
+        <h2 className="story-title">You completed a shooting session.</h2>
 
-      <div className="accuracy-row">
-        <div className="accuracy-ring-wrap">
-          <div
-            className="accuracy-ring-big"
-            style={{ '--accuracy-deg': accuracyDeg }}
-          />
-          <span className="accuracy-pct">{summary.accuracy_pct.toFixed(0)}%</span>
+        <div className="stats-hero">
+          <div>
+            <div className="big">{summary.total_shots}</div>
+            <div className="lbl">Shots</div>
+          </div>
+          <div>
+            <div className="big" style={{ color: 'var(--green)' }}>{summary.made}</div>
+            <div className="lbl">Made</div>
+          </div>
+          <div>
+            <div className="big" style={{ color: 'var(--red)' }}>{summary.missed}</div>
+            <div className="lbl">Missed</div>
+          </div>
         </div>
-        <div className="accuracy-label">Accuracy</div>
-      </div>
 
-      {weak && (
-        <div className="tip-box">
-          💡 <strong>Tip:</strong> Work on your <strong>{weak.label}</strong> shots —
-          currently at {weak.accuracy_pct.toFixed(0)}% ({weak.made}/{weak.attempts} made).
+        <div className="accuracy-row">
+          <div className="accuracy-ring-wrap">
+            <div
+              className="accuracy-ring-big"
+              style={{ '--accuracy-deg': accuracyDeg }}
+            />
+            <span className="accuracy-pct">{summary.accuracy_pct.toFixed(0)}%</span>
+          </div>
+          <div className="accuracy-label">Accuracy</div>
         </div>
-      )}
 
-      {breakdown && (
-        <div className="zone-breakdown">
-          <div className="zone-breakdown-title">Shot breakdown</div>
-          <div className="zone-breakdown-row">
-            <div className="zone-card">
-              <div className="zone-card-label">2-point</div>
-              <div className="zone-card-stat">
-                {breakdown.twos.made}<span className="zone-card-denom">/{breakdown.twos.attempts}</span>
+        {showFeedback && (fbSummary?.headline || fbSummary?.body) && (
+          <div className="feedback-card feedback-card--summary">
+            {fbSummary?.headline && (
+              <div className="feedback-headline">{fbSummary.headline}</div>
+            )}
+            {fbSummary?.body && <p className="feedback-body">{fbSummary.body}</p>}
+          </div>
+        )}
+
+        <VisualSessionSummary result={result} />
+
+        {weak && (
+          <div className="tip-box">
+            💡 <strong>Tip:</strong> Work on your <strong>{weak.label}</strong> shots —
+            currently at {weak.accuracy_pct.toFixed(0)}% ({weak.made}/{weak.attempts} made).
+          </div>
+        )}
+
+        {breakdown && (
+          <div className="zone-breakdown">
+            <div className="zone-breakdown-title">Shot breakdown</div>
+            <div className="zone-breakdown-row">
+              <div className="zone-card">
+                <div className="zone-card-label">2-point</div>
+                <div className="zone-card-stat">
+                  {breakdown.twos.made}<span className="zone-card-denom">/{breakdown.twos.attempts}</span>
+                </div>
+                <div className="zone-card-pct">
+                  {breakdown.twos.attempts > 0
+                    ? `${Math.round(breakdown.twos.made / breakdown.twos.attempts * 100)}%`
+                    : '—'}
+                </div>
               </div>
-              <div className="zone-card-pct">
-                {breakdown.twos.attempts > 0
-                  ? `${Math.round(breakdown.twos.made / breakdown.twos.attempts * 100)}%`
-                  : '—'}
-              </div>
-            </div>
-            <div className="zone-card">
-              <div className="zone-card-label">3-point</div>
-              <div className="zone-card-stat">
-                {breakdown.threes.made}<span className="zone-card-denom">/{breakdown.threes.attempts}</span>
-              </div>
-              <div className="zone-card-pct">
-                {breakdown.threes.attempts > 0
-                  ? `${Math.round(breakdown.threes.made / breakdown.threes.attempts * 100)}%`
-                  : '—'}
+              <div className="zone-card">
+                <div className="zone-card-label">3-point</div>
+                <div className="zone-card-stat">
+                  {breakdown.threes.made}<span className="zone-card-denom">/{breakdown.threes.attempts}</span>
+                </div>
+                <div className="zone-card-pct">
+                  {breakdown.threes.attempts > 0
+                    ? `${Math.round(breakdown.threes.made / breakdown.threes.attempts * 100)}%`
+                    : '—'}
+                </div>
               </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </section>
 
       {showFeedback && (
         <section className="feedback-section" aria-label="Session feedback">
-          <div className="section-title">Feedback</div>
-          {(fbSummary?.headline || fbSummary?.body) && (
-            <div className="feedback-card feedback-card--summary">
-              {fbSummary?.headline && (
-                <div className="feedback-headline">{fbSummary.headline}</div>
-              )}
-              {fbSummary?.body && <p className="feedback-body">{fbSummary.body}</p>}
-            </div>
-          )}
-          {fbInsights.length > 0 && (
-            <>
-              <div className="section-title">Insights</div>
-              <div className="feedback-card">
-                <ul className="feedback-list">
-                  {fbInsights.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          )}
-          {fbRecs.length > 0 && (
-            <>
-              <div className="section-title">Recommendations</div>
-              <div className="feedback-card">
-                <ul className="feedback-list">
-                  {fbRecs.map((line, i) => (
-                    <li key={i}>{line}</li>
-                  ))}
-                </ul>
-              </div>
-            </>
-          )}
+          <TopTakeaways insights={fbInsights} />
+
+          <FeedbackPanel
+            title="Visual Analysis"
+            subtitle="Visual evidence"
+            defaultOpen
+          >
+            <p className="vf-intro">The charts below show why the top takeaways were generated.</p>
+            <VisualFeedback result={result} />
+          </FeedbackPanel>
+
+          <FeedbackPanel
+            title="Detailed Coaching"
+            subtitle="Full coaching notes"
+            defaultOpen
+          >
+            {fbInsights.length > 0 && (
+              <>
+                <div className="section-title">Insights</div>
+                <div className="feedback-card">
+                  <ul className="feedback-list">
+                    {fbInsights.map((line, i) => (
+                      <li key={i}>
+                        <CategoryBadge cat={feedbackCategory(line)} />
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+            {fbRecs.length > 0 && (
+              <>
+                <div className="section-title">Recommendations</div>
+                <div className="feedback-card">
+                  <ul className="feedback-list">
+                    {fbRecs.map((line, i) => (
+                      <li key={i}>
+                        <CategoryBadge cat={feedbackCategory(line)} />
+                        {line}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              </>
+            )}
+          </FeedbackPanel>
         </section>
       )}
 

@@ -114,6 +114,118 @@
   padding-bottom: 4px;
 }
 
+.session-summary-section,
+.feedback-story-section,
+.feedback-panel {
+  margin: 0 0 14px;
+}
+
+.session-summary-section {
+  padding-top: 4px;
+}
+
+.story-kicker {
+  display: block;
+  padding: 0 20px 4px;
+  font-size: 0.68rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--orange);
+}
+
+.story-title {
+  padding: 0 20px 10px;
+  font-size: 1.15rem;
+  line-height: 1.2;
+  letter-spacing: -0.03em;
+}
+
+.takeaway-list {
+  display: grid;
+  gap: 8px;
+  padding: 0 20px 4px;
+}
+
+.takeaway-card {
+  display: grid;
+  grid-template-columns: 28px 1fr;
+  align-items: start;
+  gap: 10px;
+  padding: 12px 14px;
+  background: linear-gradient(180deg, rgba(255, 107, 44, 0.09), rgba(255, 255, 255, 0.035));
+  border: 1px solid rgba(255, 107, 44, 0.16);
+  border-radius: var(--radius);
+}
+
+.takeaway-num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  background: var(--orange-dim);
+  color: var(--orange);
+  font-size: 0.76rem;
+  font-weight: 800;
+}
+
+.takeaway-card p {
+  font-size: 0.9rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+.feedback-panel-toggle {
+  display: flex;
+  width: calc(100% - 40px);
+  margin: 0 20px 10px;
+  padding: 13px 14px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: var(--radius);
+  background: var(--bg-elevated);
+  color: var(--text);
+  text-align: left;
+  cursor: pointer;
+}
+
+.feedback-panel-toggle .story-kicker {
+  padding: 0;
+  margin-bottom: 3px;
+}
+
+.feedback-panel-title {
+  display: block;
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: -0.02em;
+}
+
+.panel-chevron {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--text-muted);
+  transition: transform 0.18s ease, color 0.18s ease;
+}
+
+.panel-chevron.is-open {
+  transform: rotate(180deg);
+  color: var(--orange);
+}
+
+.feedback-panel-body {
+  animation: fadeIn 0.16s ease;
+}
+
 .feedback-card {
   margin: 0 20px 12px;
   padding: 14px 16px;
@@ -173,4 +285,506 @@
   height: 5px;
   border-radius: 50%;
   background: var(--orange);
+}
+
+/* ── Visual feedback layer ── */
+.vf-section {
+  padding-bottom: 4px;
+}
+
+.vf-intro {
+  padding: 0 20px 10px;
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.vf-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  padding: 0 20px 12px;
+}
+
+.vf-card {
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  min-width: 0;
+}
+
+/* Standalone full-width cards (live outside .vf-grid) */
+.vf-standalone {
+  margin: 0 20px 12px;
+}
+
+/* Wide cards span the full row */
+.vf-card:nth-child(3),  /* Arc timeline */
+.vf-card:nth-child(4),  /* Made vs missed */
+.vf-card:nth-child(5) { /* Fatigue */
+  grid-column: 1 / -1;
+}
+
+.vf-card-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.vf-card-title {
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  color: var(--text);
+}
+
+.vf-card-hint {
+  font-size: 0.66rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.vf-note {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.vf-trend-down { color: var(--red); }
+.vf-trend-up   { color: var(--green); }
+.vf-trend-flat { color: var(--text-muted); }
+
+/* Shared made / missed colors */
+.is-made  { --vf-color: var(--green); }
+.is-missed { --vf-color: var(--red); }
+
+/* 1. Arc timeline */
+.vf-timeline {
+  display: flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 88px;
+  padding: 4px 0;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vf-bar-col {
+  flex: 1 1 0;
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  min-width: 3px;
+}
+
+.vf-bar {
+  width: 100%;
+  border-radius: 3px 3px 0 0;
+  background: var(--vf-color, var(--orange));
+  transition: height 0.3s ease;
+}
+
+.vf-legend {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 10px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+.vf-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.vf-legend-axis { margin-left: auto; font-style: italic; }
+
+.vf-swatch {
+  width: 9px;
+  height: 9px;
+  border-radius: 3px;
+  background: var(--vf-color, var(--orange));
+  display: inline-block;
+}
+
+/* 2. Made vs missed comparison */
+.vf-cmp {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vf-cmp-row {
+  display: grid;
+  grid-template-columns: 52px 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+
+.vf-cmp-label {
+  font-size: 0.76rem;
+  color: var(--text-muted);
+}
+
+.vf-cmp-track {
+  height: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.vf-cmp-fill {
+  height: 100%;
+  border-radius: 6px;
+  background: var(--vf-color, var(--orange));
+  transition: width 0.3s ease;
+}
+
+.vf-cmp-val {
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-align: right;
+}
+
+/* 3. Fatigue split */
+.vf-half {
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 28px;
+  height: 92px;
+}
+
+.vf-half-col {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  justify-content: flex-end;
+  width: 64px;
+}
+
+.vf-half-track {
+  width: 34px;
+  flex: 1;
+  display: flex;
+  align-items: flex-end;
+}
+
+.vf-half-fill {
+  width: 100%;
+  border-radius: 5px 5px 0 0;
+  background: linear-gradient(180deg, var(--orange), rgba(255, 107, 44, 0.55));
+  transition: height 0.3s ease;
+}
+
+.vf-half-val {
+  margin-top: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
+.vf-half-label {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* 4. Shot sequence */
+.vf-seq {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.vf-dot {
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: var(--vf-color, var(--orange));
+  box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.25) inset;
+}
+
+.vf-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.vf-chip {
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 4px 9px;
+  border-radius: 999px;
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+  border-left: 3px solid var(--vf-color, var(--orange));
+}
+
+/* 5. Consistency score */
+.vf-score {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.vf-score--empty {
+  flex-direction: row;
+  align-items: center;
+  gap: 10px;
+}
+
+.vf-score-badge {
+  align-self: flex-start;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.vf-score-badge.is-good    { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+.vf-score-badge.is-mid     { background: rgba(255, 107, 44, 0.15); color: var(--orange); }
+.vf-score-badge.is-bad     { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+.vf-score-badge.is-neutral { background: rgba(255, 255, 255, 0.08); color: var(--text-muted); }
+
+.vf-score-text {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.vf-score-meter {
+  height: 8px;
+  background: rgba(255, 255, 255, 0.06);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.vf-score-meter-fill {
+  height: 100%;
+  border-radius: 4px;
+  transition: width 0.3s ease;
+}
+
+.vf-score-meter-fill.is-good { background: var(--green); }
+.vf-score-meter-fill.is-mid  { background: var(--orange); }
+.vf-score-meter-fill.is-bad  { background: var(--red); }
+
+/* Consistency pill + explanation */
+.vf-pill {
+  align-self: flex-start;
+  font-size: 0.8rem;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 8px;
+}
+
+.vf-pill.is-good    { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+.vf-pill.is-mid     { background: rgba(255, 107, 44, 0.15); color: var(--orange); }
+.vf-pill.is-bad     { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+.vf-pill.is-neutral { background: rgba(255, 255, 255, 0.08); color: var(--text-muted); }
+
+.vf-muted {
+  font-size: 0.78rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.vf-explain {
+  margin-top: 10px;
+  font-size: 0.8rem;
+  line-height: 1.45;
+  color: var(--text);
+}
+
+/* Insight link footer (ties a visual to a real generated insight) */
+.vf-insight {
+  margin-top: 12px;
+  padding-top: 10px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.1);
+  font-size: 0.78rem;
+  font-style: italic;
+  line-height: 1.4;
+  color: var(--text-muted);
+}
+
+.vf-insight-tag {
+  display: inline-block;
+  margin-right: 7px;
+  padding: 1px 7px;
+  border-radius: 6px;
+  font-style: normal;
+  font-weight: 700;
+  font-size: 0.62rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--orange);
+  background: var(--orange-dim);
+  vertical-align: middle;
+}
+
+/* Session score hero */
+.vf-score-hero { padding: 14px 16px; }
+
+.vf-hero-row {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 12px;
+}
+
+.vf-hero-num {
+  font-size: 2.4rem;
+  font-weight: 800;
+  line-height: 1;
+  letter-spacing: -0.03em;
+}
+
+.vf-hero-num.is-good { color: var(--green); }
+.vf-hero-num.is-mid  { color: var(--orange); }
+.vf-hero-num.is-bad  { color: var(--red); }
+
+.vf-hero-den {
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  margin-left: 2px;
+}
+
+.vf-hero-meta {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.vf-hero-grade {
+  font-size: 1.05rem;
+  font-weight: 800;
+  width: fit-content;
+  padding: 1px 9px;
+  border-radius: 8px;
+}
+
+.vf-hero-grade.is-good { background: rgba(52, 211, 153, 0.15); color: var(--green); }
+.vf-hero-grade.is-mid  { background: rgba(255, 107, 44, 0.15); color: var(--orange); }
+.vf-hero-grade.is-bad  { background: rgba(248, 113, 113, 0.15); color: var(--red); }
+
+.vf-hero-label {
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.vf-hero-foot {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+}
+
+/* Shooting profile traits */
+.vf-traits {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.vf-trait {
+  font-size: 0.76rem;
+  font-weight: 600;
+  padding: 6px 11px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.vf-trait.tone-good { color: var(--green); border-color: rgba(52, 211, 153, 0.35); }
+.vf-trait.tone-mid  { color: var(--orange); border-color: rgba(255, 107, 44, 0.35); }
+.vf-trait.tone-bad  { color: var(--red); border-color: rgba(248, 113, 113, 0.35); }
+
+/* Made vs missed relative word */
+.vf-cmp-word {
+  font-size: 0.74rem;
+  font-weight: 600;
+  text-align: right;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.vf-cmp-word.is-hi { color: var(--text); font-weight: 700; }
+
+/* Stat row (release stability, fatigue change) */
+.vf-stat-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.vf-stat-key {
+  font-size: 0.74rem;
+  color: var(--text-muted);
+}
+
+.vf-stat-val {
+  font-size: 0.8rem;
+  font-weight: 700;
+}
+
+.vf-stat-val.is-good { color: var(--green); }
+.vf-stat-val.is-mid  { color: var(--orange); }
+.vf-stat-val.is-bad  { color: var(--red); }
+
+.vf-sev {
+  font-size: 0.76rem;
+  font-weight: 700;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.vf-sev.sev-minor    { color: var(--green); }
+.vf-sev.sev-moderate { color: var(--orange); }
+.vf-sev.sev-strong   { color: var(--red); }
+
+.vf-caption {
+  margin-top: 8px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+/* Shared Insight ↔ Recommendation category badges */
+.fb-cat {
+  display: inline-block;
+  margin-right: 8px;
+  padding: 1px 8px;
+  border-radius: 6px;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  vertical-align: middle;
+  border: 1px solid transparent;
+}
+
+.fb-cat--consistency { color: #6ee7d6; background: rgba(110, 231, 214, 0.12); border-color: rgba(110, 231, 214, 0.3); }
+.fb-cat--fatigue     { color: var(--red); background: rgba(248, 113, 113, 0.12); border-color: rgba(248, 113, 113, 0.3); }
+.fb-cat--timing      { color: #c4a7ff; background: rgba(196, 167, 255, 0.12); border-color: rgba(196, 167, 255, 0.3); }
+.fb-cat--sequence    { color: var(--green); background: rgba(52, 211, 153, 0.12); border-color: rgba(52, 211, 153, 0.3); }
+.fb-cat--arc         { color: var(--orange); background: rgba(255, 107, 44, 0.12); border-color: rgba(255, 107, 44, 0.3); }
+.fb-cat--accuracy    { color: #9bd0ff; background: rgba(155, 208, 255, 0.12); border-color: rgba(155, 208, 255, 0.3); }
+
+@media (max-width: 360px) {
+  .vf-grid { grid-template-columns: 1fr; }
+  .vf-card:nth-child(n) { grid-column: 1 / -1; }
 }
