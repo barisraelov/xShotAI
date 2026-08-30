@@ -6,8 +6,8 @@ Endpoints:
   GET  /jobs/{id}                                               → status | AnalyzeResult
 
 Real CV path: video is saved to a temp file, processed by cv_pipeline.process_video()
-in a thread pool (asyncio.to_thread), and the result is stored in the in-memory job
-store once complete.
+in a thread pool (asyncio.to_thread), and the result is persisted to PostgreSQL
+(jobs table) once complete.
 
 Test / dev helpers:
   fail=1 form field  → stub failure path (exercises the full failed AnalyzeResult UX)
@@ -20,24 +20,23 @@ import json
 import logging
 import os
 import tempfile
-import time
 import uuid
 from contextlib import asynccontextmanager
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
+import crud
 import cv_pipeline
+import models  # noqa: F401  — ensures Job is registered on Base.metadata
 from court_mapper import CourtMapper
+from db import Base, SessionLocal, engine, get_db
 from feedback import generate_feedback
 
 logger = logging.getLogger(__name__)
-
-# ── In-memory job store ────────────────────────────────────────────────────────
-# { job_id: { "status": str, "result": dict | None, "created_at": float } }
-_jobs: dict[str, dict] = {}
 
 
 # ── Result builder ─────────────────────────────────────────────────────────────
@@ -111,13 +110,20 @@ async def _simulate_failure(job_id: str) -> None:
     """Stub failure path — triggered by fail=1 form field. Exercises the full
     completed vs failed AnalyzeResult contract from the UI side."""
     await asyncio.sleep(3)
-    if job_id in _jobs:
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["result"] = {
-            "job_id": job_id,
-            "status": "failed",
-            "error":  "Stub failure — triggered by fail=1 flag (test mode only).",
-        }
+    db = SessionLocal()
+    try:
+        crud.update_job(
+            db,
+            job_id,
+            status="failed",
+            result={
+                "job_id": job_id,
+                "status": "failed",
+                "error":  "Stub failure — triggered by fail=1 flag (test mode only).",
+            },
+        )
+    finally:
+        db.close()
 
 
 async def _process_video_task(
@@ -127,9 +133,10 @@ async def _process_video_task(
 ) -> None:
     """
     Write video bytes to a temp file, run the CV pipeline in a thread pool
-    (to keep the event loop free), then store the result in the job store.
+    (to keep the event loop free), then persist the result to the jobs table.
     """
     tmp_path: Optional[str] = None
+    db = SessionLocal()
     try:
         # Persist the upload; suffix helps OpenCV pick the right decoder.
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
@@ -144,19 +151,24 @@ async def _process_video_task(
         )
 
         homography_list = court_mapper.homography_matrix if court_mapper else None
-        _jobs[job_id]["status"] = "completed"
-        _jobs[job_id]["result"] = _build_real_result(job_id, shot_points, homography_list)
+        result = _build_real_result(job_id, shot_points, homography_list)
+        crud.update_job(db, job_id, status="completed", result=result)
         logger.info("Job %s: completed — %d shots detected", job_id, len(shot_points))
 
     except Exception as exc:
         logger.exception("Job %s: CV pipeline error", job_id)
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["result"] = {
-            "job_id": job_id,
-            "status": "failed",
-            "error":  str(exc),
-        }
+        crud.update_job(
+            db,
+            job_id,
+            status="failed",
+            result={
+                "job_id": job_id,
+                "status": "failed",
+                "error":  str(exc),
+            },
+        )
     finally:
+        db.close()
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
@@ -168,6 +180,7 @@ async def _process_video_task(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
     yield
 
 
@@ -192,9 +205,10 @@ async def analyze(
     video: UploadFile = File(...),
     calibration_points: Optional[str] = Form(None),  # JSON: [[u,v], ...] × 6
     fail: Optional[str] = Form(None),                # "1" or "true" → stub failure
+    db: Session = Depends(get_db),
 ):
     job_id = f"job_{uuid.uuid4().hex[:10]}"
-    _jobs[job_id] = {"status": "processing", "result": None, "created_at": time.time()}
+    crud.create_job(db, job_id)
 
     if fail and fail.lower() in ("1", "true", "yes"):
         background_tasks.add_task(_simulate_failure, job_id)
@@ -219,10 +233,10 @@ async def analyze(
 
 
 @app.get("/jobs/{job_id}")
-async def get_job(job_id: str):
-    job = _jobs.get(job_id)
+async def get_job(job_id: str, db: Session = Depends(get_db)):
+    job = crud.get_job(db, job_id)
     if job is None:
         return JSONResponse(status_code=404, content={"detail": "Job not found"})
-    if job["status"] == "processing":
+    if job.status == "processing":
         return {"job_id": job_id, "status": "processing"}
-    return job["result"]
+    return job.result
