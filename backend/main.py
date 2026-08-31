@@ -2,8 +2,13 @@
 xShot AI — FastAPI backend (Demo v1)
 
 Endpoints:
-  POST /analyze   (multipart: video file + optional fail flag)  → { job_id }
-  GET  /jobs/{id}                                               → status | AnalyzeResult
+  POST /analyze            (multipart: video + optional fail flag; optional Bearer) → { job_id }
+  GET  /jobs/{id}                                                → status | AnalyzeResult
+  POST /auth/register | POST /auth/login | GET /auth/me          → see routers/auth.py
+  GET  /users/me/history                                         → see routers/users.py
+
+When /analyze is called with a valid Bearer token the job is linked to that
+user; guests still work and produce jobs with user_id = NULL.
 
 Real CV path: video is saved to a temp file, processed by cv_pipeline.process_video()
 in a thread pool (asyncio.to_thread), and the result is persisted to PostgreSQL
@@ -31,10 +36,13 @@ from sqlalchemy.orm import Session
 
 import crud
 import cv_pipeline
-import models  # noqa: F401  — ensures Job is registered on Base.metadata
+import models  # noqa: F401  — ensures Job/User are registered on Base.metadata
+from auth import get_current_user_optional
 from court_mapper import CourtMapper
 from db import Base, SessionLocal, engine, get_db
 from feedback import generate_feedback
+from routers import auth as auth_router
+from routers import users as users_router
 
 logger = logging.getLogger(__name__)
 
@@ -198,6 +206,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+app.include_router(auth_router.router)
+app.include_router(users_router.router)
+
 
 @app.post("/analyze")
 async def analyze(
@@ -206,9 +217,10 @@ async def analyze(
     calibration_points: Optional[str] = Form(None),  # JSON: [[u,v], ...] × 6
     fail: Optional[str] = Form(None),                # "1" or "true" → stub failure
     db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
 ):
     job_id = f"job_{uuid.uuid4().hex[:10]}"
-    crud.create_job(db, job_id)
+    crud.create_job(db, job_id, user_id=current_user.id if current_user else None)
 
     if fail and fail.lower() in ("1", "true", "yes"):
         background_tasks.add_task(_simulate_failure, job_id)
