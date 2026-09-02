@@ -1,0 +1,25 @@
+# Used when the build context is backend/ itself
+# (e.g. Render with Root Directory = backend). The repo-root .dockerignore
+# covers the documented `docker build -f backend/Dockerfile .` invocation.
+
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+.env
+.env.*
+!.env.example
+
+.git/
+.vscode/
+.idea/
+.claude/
+
+test_videos/
+*.mp4
+
+.DS_Store
+Thumbs.db

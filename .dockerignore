@@ -1,0 +1,34 @@
+# Build context is the repo root — keep the image small and cache-stable.
+
+# Python bytecode / caches
+**/__pycache__/
+**/*.py[cod]
+**/*.egg-info/
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+
+# Secrets / local env
+**/.env
+**/.env.*
+!**/.env.example
+
+# VCS / editor / tooling
+.git/
+.gitignore
+.vscode/
+.idea/
+.claude/
+
+# Frontend build artifacts (backend image doesn't need them)
+**/node_modules/
+frontend/dist/
+frontend/build/
+
+# Large local-only assets
+backend/test_videos/
+**/*.mp4
+
+# OS cruft
+.DS_Store
+Thumbs.db

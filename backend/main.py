@@ -38,6 +38,7 @@ import crud
 import cv_pipeline
 import models  # noqa: F401  — ensures Job/User are registered on Base.metadata
 from auth import get_current_user_optional
+from config import settings
 from court_mapper import CourtMapper
 from db import Base, SessionLocal, engine, get_db
 from feedback import generate_feedback
@@ -194,14 +195,22 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="xShot AI — Demo v1", lifespan=lifespan)
 
+# Origins come from settings.CORS_ORIGINS (default "*" for the initial cloud
+# deploy). Local dev origins — localhost:5173 (Vite) and :8080 (prototype) — are
+# always allowed so a tightened production list never breaks local work.
+_LOCAL_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+_cors_origins = settings.cors_origins_list
+if _cors_origins != ["*"]:
+    _cors_origins = sorted(set(_cors_origins) | set(_LOCAL_DEV_ORIGINS))
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",    # React dev server (npm run dev)
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",    # Prototype served via xShot-prototype/serve.py
-        "http://127.0.0.1:8080",
-    ],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
