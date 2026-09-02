@@ -23,6 +23,14 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
+# Install the CPU-only build of torch/torchvision first. The default PyPI wheels
+# bundle the full CUDA stack (~6 GB) that a CPU cloud box never uses; the cpu
+# index keeps the image around ~2 GB. Pinning here also stops the -r install
+# below from resolving the CUDA variant.
+RUN pip install --no-cache-dir \
+        --index-url https://download.pytorch.org/whl/cpu \
+        torch torchvision
+
 # Dependencies first, so the pip layer is cached until requirements.txt changes.
 COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
