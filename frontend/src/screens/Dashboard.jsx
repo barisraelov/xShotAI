@@ -1,15 +1,24 @@
 import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
+import { isAuthed, logout } from '../auth'
 import './Dashboard.css'
 
 export default function Dashboard({ navigate, result }) {
   const summary = result?.summary ?? null
+
+  function handleLogout() {
+    logout()
+    navigate('welcome')
+  }
 
   return (
     <div className="screen-enter">
       <div className="top-bar">
         <Logo />
         <div className="top-actions">
+          {isAuthed() && (
+            <button className="logout-btn" onClick={handleLogout}>Log out</button>
+          )}
           <div className="avatar" />
         </div>
       </div>

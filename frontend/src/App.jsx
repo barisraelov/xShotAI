@@ -1,7 +1,11 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import './index.css'
 
+import { isAuthed, setUnauthorizedHandler } from './auth'
+
 import Welcome   from './screens/Welcome'
+import Login     from './screens/Login'
+import Register  from './screens/Register'
 import Dashboard from './screens/Dashboard'
 import Upload    from './screens/Upload'
 import Calibrate from './screens/Calibrate'
@@ -72,12 +76,14 @@ function demoView() {
 }
 
 const INITIAL_STATE = {
-  view:   demoView() ?? 'welcome',
+  view:   demoView() ?? (isAuthed() ? 'dashboard' : 'welcome'),
   jobId:  demoView() ? 'demo' : null,
   result: demoView() ? DEMO_STUB : null,
   error:  null,
   file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
 }
+
+const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate'])
 
 export default function App() {
   const [state, setState] = useState(INITIAL_STATE)
@@ -86,7 +92,14 @@ export default function App() {
     setState(s => ({ ...s, view, ...patch }))
   }
 
-  const noNav = state.view === 'welcome' || state.view === 'analyzing' || state.view === 'calibrate'
+  // Any authenticated request that comes back 401 (expired/invalid token) sends
+  // the user to the login screen.
+  useEffect(() => {
+    setUnauthorizedHandler(() => setState(s => ({ ...s, view: 'login', error: null })))
+    return () => setUnauthorizedHandler(null)
+  }, [])
+
+  const noNav = NO_NAV_VIEWS.has(state.view)
 
   const screenProps = {
     navigate,
@@ -99,6 +112,8 @@ export default function App() {
   return (
     <div className={`app-frame${noNav ? ' no-nav' : ''}`}>
       {state.view === 'welcome'   && <Welcome   {...screenProps} />}
+      {state.view === 'login'     && <Login     {...screenProps} />}
+      {state.view === 'register'  && <Register  {...screenProps} />}
       {state.view === 'dashboard' && <Dashboard {...screenProps} />}
       {state.view === 'upload'    && <Upload    {...screenProps} />}
       {state.view === 'calibrate' && <Calibrate {...screenProps} />}

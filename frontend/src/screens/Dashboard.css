@@ -27,3 +27,17 @@
   padding: 0 20px 24px;
   flex-wrap: wrap;
 }
+
+.logout-btn {
+  height: 40px;
+  padding: 0 14px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: var(--bg-card);
+  border-radius: 12px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.logout-btn:hover { color: var(--text); }
