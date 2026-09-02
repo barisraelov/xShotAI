@@ -41,3 +41,34 @@
   cursor: pointer;
 }
 .logout-btn:hover { color: var(--text); }
+
+/* ── Past sessions list ── */
+.history-list {
+  list-style: none;
+  padding: 0 20px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.history-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.history-row:hover { border-color: rgba(255, 107, 44, 0.4); }
+.history-row:disabled { opacity: 0.6; cursor: default; }
+
+.history-date { flex: 1; font-size: 0.92rem; }
+.history-stat { font-weight: 700; font-size: 0.95rem; }
+.history-pct { color: var(--text-muted); font-weight: 600; }
+.history-go { color: var(--orange); font-weight: 700; width: 1rem; text-align: center; }

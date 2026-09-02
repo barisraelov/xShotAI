@@ -43,6 +43,7 @@ from court_mapper import CourtMapper
 from db import Base, SessionLocal, engine, get_db
 from feedback import generate_feedback
 from routers import auth as auth_router
+from routers import sessions as sessions_router
 from routers import users as users_router
 
 logger = logging.getLogger(__name__)
@@ -161,8 +162,13 @@ async def _process_video_task(
 
         homography_list = court_mapper.homography_matrix if court_mapper else None
         result = _build_real_result(job_id, shot_points, homography_list)
-        crud.update_job(db, job_id, status="completed", result=result)
+        job = crud.update_job(db, job_id, status="completed", result=result)
         logger.info("Job %s: completed — %d shots detected", job_id, len(shot_points))
+
+        # Save to the owner's history (guests have no user_id → nothing to save).
+        if job is not None and job.user_id:
+            crud.create_session(db, user_id=job.user_id, job_id=job_id, result=result)
+            logger.info("Job %s: saved to history for user %s", job_id, job.user_id)
 
     except Exception as exc:
         logger.exception("Job %s: CV pipeline error", job_id)
@@ -217,6 +223,7 @@ app.add_middleware(
 
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
+app.include_router(sessions_router.router)
 
 
 @app.post("/analyze")

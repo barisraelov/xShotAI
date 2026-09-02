@@ -40,6 +40,24 @@ class JobOut(BaseModel):
     created_at: datetime
 
 
+class SessionSummary(BaseModel):
+    """One row in the user's history list."""
+    model_config = ConfigDict(from_attributes=True)
+
+    id: str
+    created_at: datetime
+    total_shots: int
+    made: int
+    missed: int
+    accuracy_pct: float
+
+
+class SessionDetail(SessionSummary):
+    """A single past session with its full AnalyzeResult payload."""
+    job_id: Optional[str] = None
+    result: dict
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"
