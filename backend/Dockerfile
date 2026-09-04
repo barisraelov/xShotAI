@@ -3,13 +3,16 @@
 # Build context is the REPOSITORY ROOT (so the COPY paths below are backend/…):
 #   docker build -f backend/Dockerfile -t xshot-backend .
 #
-# On Render: Dockerfile Path = backend/Dockerfile, leave Root Directory blank.
+# On Render/Railway: Dockerfile Path = backend/Dockerfile, leave Root Directory blank.
 
 FROM python:3.11-slim
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PIP_NO_CACHE_DIR=1
+    PIP_NO_CACHE_DIR=1 \
+    PIP_DISABLE_PIP_VERSION_CHECK=1 \
+    UV_NO_CACHE=1 \
+    UV_LINK_MODE=copy
 
 # System libraries: ffmpeg + OpenCV runtime deps + libpq for the Postgres client.
 RUN apt-get update && apt-get install -y --no-install-recommends \
@@ -23,17 +26,25 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# Install the CPU-only build of torch/torchvision first. The default PyPI wheels
-# bundle the full CUDA stack (~6 GB) that a CPU cloud box never uses; the cpu
-# index keeps the image around ~2 GB. Pinning here also stops the -r install
-# below from resolving the CUDA variant.
-RUN pip install --no-cache-dir \
+# Install deps with uv instead of pip. pip's backtracking resolver holds many
+# candidate wheels in memory at once while resolving torch + ultralytics + opencv
+# + matplotlib; on a small CI/build box that peak is what OOM-kills the build.
+# uv resolves from a prebuilt graph with a far lower memory ceiling and is much
+# faster. uv does not compile .pyc on install (Python compiles lazily on first
+# import), which also trims build CPU/memory and layer size.
+RUN pip install --no-cache-dir "uv>=0.5,<1.0"
+
+# 1) CPU-only torch/torchvision from the PyTorch CPU index. The default PyPI
+#    wheels bundle the full CUDA stack (~6 GB) a CPU box never uses. The +cpu
+#    wheels declare no nvidia-* deps, so a normal resolve stays CPU-only.
+RUN uv pip install --system --no-cache \
         --index-url https://download.pytorch.org/whl/cpu \
         torch torchvision
 
-# Dependencies first, so the pip layer is cached until requirements.txt changes.
+# 2) Everything else. torch is already satisfied, so it is not re-resolved.
+#    Split from the torch step so each install resolves a smaller graph.
 COPY backend/requirements.txt ./requirements.txt
-RUN pip install --no-cache-dir -r requirements.txt
+RUN uv pip install --system --no-cache -r requirements.txt
 
 # Application source (model weights best.pt / yolov8n.pt included).
 COPY backend/ ./
