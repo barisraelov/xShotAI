@@ -1,19 +1,41 @@
 import './CourtMap.css'
 
+// The 10 mappable zones from the backend's 11-zone taxonomy (all but the
+// "unknown" fallback, which has no natural court position and is simply not
+// drawn — see xShot-prototype/analyze_result_spec.md).
+//
+// Positions approximate real court geometry (extended > three-point > mid-range
+// as distance from the hoop at svg (50,52) shrinks; left/right split by svgCx)
+// using simple rectangular bands rather than the true curved 3pt arc, so the
+// fills stay easy to reason about — the actual arc/paint/backboard remain
+// exactly as drawn in the "Court lines on top" block below. Draw order matters:
+// corners are listed last so they paint over the small edge of the mid-wing
+// bands they visually take priority over (see ZONE_PATHS).
 const ZONES = [
-  { id: 'three_left',  label: '3pt Left',  svgCx: 22, svgCy: 24 },
-  { id: 'three_right', label: '3pt Right', svgCx: 78, svgCy: 24 },
-  { id: 'two_left',    label: '2pt Left',  svgCx: 29, svgCy: 44 },
-  { id: 'two_right',   label: '2pt Right', svgCx: 71, svgCy: 44 },
+  { id: 'extended',           svgCx: 50, svgCy: 9.5 },
+  { id: 'three_left_wing',    svgCx: 19, svgCy: 21 },
+  { id: 'three_top_key',      svgCx: 50, svgCy: 21 },
+  { id: 'three_right_wing',   svgCx: 81, svgCy: 21 },
+  { id: 'mid_left_wing',      svgCx: 19, svgCy: 35.5 },
+  { id: 'mid_center',         svgCx: 50, svgCy: 35.5 },
+  { id: 'mid_right_wing',     svgCx: 81, svgCy: 35.5 },
+  { id: 'mid_baseline',       svgCx: 50, svgCy: 50 },
+  { id: 'three_left_corner',  svgCx: 10, svgCy: 45 },
+  { id: 'three_right_corner', svgCx: 90, svgCy: 45 },
 ]
 
-// Zone fill paths (viewBox "0 0 100 60", hoop at cx=50 cy=52)
-// Arc midpoint at t=0.5: (50, 22). Left half: Q33,22 → (50,22). Right half: Q67,22 → (84,38).
+// Zone fill paths (viewBox "0 0 100 60", hoop at cx=50 cy=52, court box x:4-96 y:4-56).
 const ZONE_PATHS = {
-  three_left:  'M 4 56 L 4 4 L 50 4 L 50 22 Q 33 22 16 38 L 16 56 Z',
-  three_right: 'M 96 56 L 96 4 L 50 4 L 50 22 Q 67 22 84 38 L 84 56 Z',
-  two_left:    'M 50 56 L 16 56 L 16 38 Q 33 22 50 22 Z',
-  two_right:   'M 50 56 L 84 56 L 84 38 Q 67 22 50 22 Z',
+  extended:           'M 4 4  L 96 4  L 96 15 L 4 15  Z',
+  three_left_wing:    'M 4 15 L 34 15 L 34 27 L 4 27  Z',
+  three_top_key:      'M 34 15 L 66 15 L 66 27 L 34 27 Z',
+  three_right_wing:   'M 66 15 L 96 15 L 96 27 L 66 27 Z',
+  mid_left_wing:       'M 4 27 L 34 27 L 34 44 L 4 44  Z',
+  mid_center:          'M 34 27 L 66 27 L 66 44 L 34 44 Z',
+  mid_right_wing:      'M 66 27 L 96 27 L 96 44 L 66 44 Z',
+  mid_baseline:        'M 16 44 L 84 44 L 84 56 L 16 56 Z',
+  three_left_corner:   'M 4 34  L 16 34 L 16 56 L 4 56  Z',
+  three_right_corner:  'M 96 34 L 84 34 L 84 56 L 96 56 Z',
 }
 
 function zoneColor(accuracy, attempts) {
@@ -23,8 +45,20 @@ function zoneColor(accuracy, attempts) {
   return 'rgba(248, 113, 113, 0.20)'
 }
 
-export default function CourtMap({ zoneAggregates }) {
+// CourtCoord -> percentage position within .court-container (which stretches
+// the 100x60 SVG viewBox to fill it via preserveAspectRatio="none", so a
+// viewBox unit maps 1:1 to a container percentage point).
+// x: 0 = left sideline -> 1 = right sideline, mapped onto the court rect (x 4..96).
+// y: 0 = near the hoop (svg y=52) -> 1 = far end / half-court (svg y=4).
+function courtPositionPct({ x, y }) {
+  const left = 4 + Math.min(Math.max(x, 0), 1) * 92
+  const top  = (52 - Math.min(Math.max(y, 0), 1) * 48) / 60 * 100
+  return { left: `${left}%`, top: `${top}%` }
+}
+
+export default function CourtMap({ zoneAggregates, shotPoints }) {
   const byId = Object.fromEntries((zoneAggregates ?? []).map(z => [z.polygon_id, z]))
+  const dots = (shotPoints ?? []).filter(s => s?.origin?.court)
 
   return (
     <div className="court-container">
@@ -38,12 +72,10 @@ export default function CourtMap({ zoneAggregates }) {
         {ZONES.map(z => {
           const agg = byId[z.id]
           return (
-            <path
-              key={z.id}
-              d={ZONE_PATHS[z.id]}
-              fill={zoneColor(agg?.accuracy_pct, agg?.attempts)}
-              stroke="none"
-            />
+            <path key={z.id} d={ZONE_PATHS[z.id]}
+              fill={zoneColor(agg?.accuracy_pct, agg?.attempts)} stroke="none">
+              <title>{agg?.label ?? z.id}</title>
+            </path>
           )
         })}
 
@@ -67,24 +99,24 @@ export default function CourtMap({ zoneAggregates }) {
         <path d="M16 38 Q50 6 84 38"
           fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.8" />
 
-        {/* Zone stats labels */}
+        {/* Zone stats labels — percentage + made/attempts, e.g. "33%" / "1/3" */}
         {ZONES.map(z => {
           const agg = byId[z.id]
           if (!agg?.attempts) return (
-            <text key={z.id} x={z.svgCx} y={z.svgCy}
-              textAnchor="middle" fontSize="3.8" fill="rgba(255,255,255,0.30)">
+            <text key={z.id} x={z.svgCx} y={z.svgCy + 1}
+              textAnchor="middle" fontSize="3" fill="rgba(255,255,255,0.30)">
               —
             </text>
           )
           return (
             <g key={z.id}>
-              <text x={z.svgCx} y={z.svgCy - 2}
-                textAnchor="middle" fontSize="4.2" fontWeight="bold"
-                fill="rgba(255,255,255,0.90)">
+              <text x={z.svgCx} y={z.svgCy - 1.6}
+                textAnchor="middle" fontSize="3" fontWeight="bold"
+                fill="rgba(255,255,255,0.92)">
                 {agg.accuracy_pct.toFixed(0)}%
               </text>
-              <text x={z.svgCx} y={z.svgCy + 3}
-                textAnchor="middle" fontSize="3.2"
+              <text x={z.svgCx} y={z.svgCy + 2.1}
+                textAnchor="middle" fontSize="2.3"
                 fill="rgba(255,255,255,0.55)">
                 {agg.made}/{agg.attempts}
               </text>
@@ -92,6 +124,16 @@ export default function CourtMap({ zoneAggregates }) {
           )
         })}
       </svg>
+
+      {/* Individual shot markers — only for shots with a mapped court position. */}
+      {dots.map((s, i) => (
+        <div
+          key={s.shot_id ?? i}
+          className={`shot-dot ${s.result === 'made' ? 'dot-made' : 'dot-missed'}`}
+          style={courtPositionPct(s.origin.court)}
+          title={`${s.shot_id ?? `Shot ${i + 1}`} — ${s.result}`}
+        />
+      ))}
     </div>
   )
 }
