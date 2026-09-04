@@ -3,16 +3,17 @@ import './index.css'
 
 import { isAuthed, setUnauthorizedHandler } from './auth'
 
-import Welcome   from './screens/Welcome'
-import Login     from './screens/Login'
-import Register  from './screens/Register'
-import Dashboard from './screens/Dashboard'
-import Upload    from './screens/Upload'
-import Calibrate from './screens/Calibrate'
-import Analyzing from './screens/Analyzing'
-import Session   from './screens/Session'
-import Heatmap   from './screens/Heatmap'
-import Progress  from './screens/Progress'
+import Welcome    from './screens/Welcome'
+import Login      from './screens/Login'
+import Register   from './screens/Register'
+import Dashboard  from './screens/Dashboard'
+import Upload     from './screens/Upload'
+import Calibrate  from './screens/Calibrate'
+import Analyzing  from './screens/Analyzing'
+import Session    from './screens/Session'
+import Heatmap    from './screens/Heatmap'
+import Progress   from './screens/Progress'
+import Statistics from './screens/Statistics'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
 const DEMO_STUB = {
@@ -111,16 +112,17 @@ export default function App() {
 
   return (
     <div className={`app-frame${noNav ? ' no-nav' : ''}`}>
-      {state.view === 'welcome'   && <Welcome   {...screenProps} />}
-      {state.view === 'login'     && <Login     {...screenProps} />}
-      {state.view === 'register'  && <Register  {...screenProps} />}
-      {state.view === 'dashboard' && <Dashboard {...screenProps} />}
-      {state.view === 'upload'    && <Upload    {...screenProps} />}
-      {state.view === 'calibrate' && <Calibrate {...screenProps} />}
-      {state.view === 'analyzing' && <Analyzing {...screenProps} setState={setState} />}
-      {state.view === 'session'   && <Session   {...screenProps} />}
-      {state.view === 'heatmap'   && <Heatmap   {...screenProps} />}
-      {state.view === 'progress'  && <Progress  {...screenProps} />}
+      {state.view === 'welcome'    && <Welcome    {...screenProps} />}
+      {state.view === 'login'      && <Login      {...screenProps} />}
+      {state.view === 'register'   && <Register   {...screenProps} />}
+      {state.view === 'dashboard'  && <Dashboard  {...screenProps} />}
+      {state.view === 'upload'     && <Upload     {...screenProps} />}
+      {state.view === 'calibrate'  && <Calibrate  {...screenProps} />}
+      {state.view === 'analyzing'  && <Analyzing  {...screenProps} setState={setState} />}
+      {state.view === 'session'    && <Session    {...screenProps} />}
+      {state.view === 'heatmap'    && <Heatmap    {...screenProps} />}
+      {state.view === 'progress'   && <Progress   {...screenProps} />}
+      {state.view === 'statistics' && <Statistics {...screenProps} />}
     </div>
   )
 }

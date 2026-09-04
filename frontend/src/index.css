@@ -193,10 +193,24 @@ body {
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   min-height: 72px;
+  /* Pin the value to the bottom regardless of whether the label wraps to one
+     or two lines, so values stay on one baseline across cards in a row. */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .stat-label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
 .stat-value { font-size: 1.4rem; font-weight: 700; }
+
+/* 3-up variant (e.g. Statistics screen) — same card, tighter columns. */
+.stat-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+.stat-grid-3 .stat-value { font-size: 1.15rem; }
 
 /* ── Tip box ── */
 .tip-box {
