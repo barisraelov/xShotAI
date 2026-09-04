@@ -17,6 +17,11 @@ pydantic-settings, with development-friendly fallbacks.
   CORS_ORIGINS                  — comma-separated allowed origins, or "*" to allow
                                   any origin (default; convenient for the first
                                   cloud deploy, tighten later).
+  RAILWAY_GIT_* / BUILD_SHA     — deploy fingerprint. Railway injects
+                                  RAILWAY_GIT_COMMIT_SHA / _BRANCH / _COMMIT_MESSAGE
+                                  into the running container automatically; set
+                                  BUILD_SHA yourself on other platforms. Surfaced
+                                  at GET /version and in /openapi.json info.version.
 """
 
 import os
@@ -41,6 +46,20 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 60 * 24  # 24 hours
 
     CORS_ORIGINS: str = "*"
+
+    # Deploy fingerprint (all optional; empty in local dev).
+    RAILWAY_GIT_COMMIT_SHA: str = ""
+    RAILWAY_GIT_BRANCH: str = ""
+    RAILWAY_GIT_COMMIT_MESSAGE: str = ""
+    BUILD_SHA: str = ""
+
+    @property
+    def git_sha(self) -> str:
+        return self.RAILWAY_GIT_COMMIT_SHA or self.BUILD_SHA or "unknown"
+
+    @property
+    def git_sha_short(self) -> str:
+        return self.git_sha[:12] if self.git_sha != "unknown" else "unknown"
 
     @field_validator("DATABASE_URL")
     @classmethod

@@ -27,6 +27,7 @@ import os
 import tempfile
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, UploadFile
@@ -193,13 +194,20 @@ async def _process_video_task(
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
+_STARTED_AT = datetime.now(timezone.utc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine)
     yield
 
 
-app = FastAPI(title="xShot AI — Demo v1", lifespan=lifespan)
+app = FastAPI(
+    title="xShot AI — Demo v1",
+    version=settings.git_sha_short,  # deploy fingerprint in /openapi.json info.version
+    lifespan=lifespan,
+)
 
 # Origins come from settings.CORS_ORIGINS (default "*" for the initial cloud
 # deploy). Local dev origins — localhost:5173 (Vite) and :8080 (prototype) — are
@@ -224,6 +232,26 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
 app.include_router(sessions_router.router)
+
+
+@app.get("/version")
+def version() -> dict:
+    """Deploy fingerprint — unauthenticated, for verifying which commit is live."""
+    api_routes = sorted({
+        r.path for r in app.routes
+        if getattr(r, "path", "").startswith(
+            ("/analyze", "/jobs", "/auth", "/users", "/sessions")
+        )
+    })
+    return {
+        "commit":       settings.git_sha,
+        "commit_short": settings.git_sha_short,
+        "branch":       settings.RAILWAY_GIT_BRANCH or None,
+        "message":      settings.RAILWAY_GIT_COMMIT_MESSAGE or None,
+        "started_at":   _STARTED_AT.isoformat(),
+        "routes":       api_routes,
+        "has_sessions": "/sessions" in api_routes,
+    }
 
 
 @app.post("/analyze")
