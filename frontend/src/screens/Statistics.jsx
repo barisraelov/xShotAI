@@ -4,6 +4,7 @@ import CourtMap from '../components/CourtMap'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
+import './Statistics.css'
 
 // "—" for anything that would otherwise be NaN/Infinity (0 sessions, 0 shots).
 function fmt1(v) {
@@ -11,6 +12,34 @@ function fmt1(v) {
 }
 function fmtPct1(v) {
   return v == null || !Number.isFinite(v) ? '—' : `${v.toFixed(1)}%`
+}
+
+// e.g. "Sep 4, 2026 · 5:41 PM" — same format as the Dashboard history list.
+function formatDateTime(iso) {
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${date} · ${time}`
+}
+
+// Highest-accuracy session with 5 or more shots. Ties break on more shots
+// attempted, then on the more recent session. Returns null if no session
+// qualifies (min. 5 shots).
+function pickBestSession(sessions) {
+  let best = null
+  for (const s of sessions) {
+    const shots = Number(s.total_shots) || 0
+    if (shots < 5) continue
+    if (!best) { best = s; continue }
+    const acc = Number(s.accuracy_pct) || 0
+    const bestAcc = Number(best.accuracy_pct) || 0
+    if (acc !== bestAcc) { if (acc > bestAcc) best = s; continue }
+    const bestShots = Number(best.total_shots) || 0
+    if (shots !== bestShots) { if (shots > bestShots) best = s; continue }
+    if (new Date(s.created_at) > new Date(best.created_at)) best = s
+  }
+  return best
 }
 
 // Aggregate + per-session-average stats from a list of SessionSummary rows.
@@ -77,6 +106,9 @@ export default function Statistics({ navigate }) {
   const [zoneAggregates, setZoneAggregates] = useState([])
   const [zoneLoading,    setZoneLoading]    = useState(false)
 
+  const [openingBest,   setOpeningBest]   = useState(false)
+  const [openBestError, setOpenBestError] = useState(null)
+
   // 1. Session summaries (date, total_shots, made, accuracy_pct) — cheap, one call.
   useEffect(() => {
     if (!isAuthed()) return
@@ -111,6 +143,21 @@ export default function Statistics({ navigate }) {
   }, [sessions])
 
   const stats = computeStats(sessions)
+  const bestSession = pickBestSession(sessions)
+
+  async function openBestSession(id) {
+    if (openingBest) return
+    setOpeningBest(true)
+    setOpenBestError(null)
+    try {
+      const data = await getSession(id)
+      // Same shape a fresh analysis produces — Session.jsx just works.
+      navigate('session', { result: data.result, jobId: data.id, error: null })
+    } catch (err) {
+      setOpenBestError("Couldn't open that session. Please try again.")
+      setOpeningBest(false)
+    }
+  }
 
   return (
     <div className="screen-enter">
@@ -178,6 +225,29 @@ export default function Statistics({ navigate }) {
               </div>
             </div>
           </div>
+
+          <div className="section-title">Best Session</div>
+          {bestSession ? (
+            <button
+              className="best-session-card"
+              onClick={() => openBestSession(bestSession.id)}
+              disabled={openingBest}
+            >
+              <div className="best-session-main">
+                <div className="best-session-date">{formatDateTime(bestSession.created_at)}</div>
+                <div className="best-session-stat">
+                  {bestSession.made}/{bestSession.total_shots}
+                  <span className="best-session-pct"> · {fmtPct1(bestSession.accuracy_pct)}</span>
+                </div>
+              </div>
+              <div className="best-session-go">{openingBest ? '…' : 'View Session →'}</div>
+            </button>
+          ) : (
+            <p className="dashboard-hint">
+              No qualifying sessions yet (min. 5 shots required).
+            </p>
+          )}
+          {openBestError && <div className="error-box">{openBestError}</div>}
 
           <div className="section-title">All-Time Shot Chart</div>
           {zoneLoading && <p className="dashboard-hint">Loading shot chart…</p>}
