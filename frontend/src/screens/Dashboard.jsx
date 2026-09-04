@@ -16,7 +16,8 @@ export default function Dashboard({ navigate, result }) {
 
   const [sessions, setSessions] = useState([])
   const [histLoading, setHistLoading] = useState(false)
-  const [histError, setHistError] = useState(null)
+  const [histError, setHistError] = useState(null)   // list load — shown as a muted note
+  const [openError, setOpenError] = useState(null)   // row click — actionable, shown prominently
   const [openingId, setOpeningId] = useState(null)
 
   useEffect(() => {
@@ -39,13 +40,13 @@ export default function Dashboard({ navigate, result }) {
   async function openSession(id) {
     if (openingId) return
     setOpeningId(id)
-    setHistError(null)
+    setOpenError(null)
     try {
       const data = await getSession(id)
       // Same shape a fresh analysis produces — session/heatmap screens just work.
       navigate('session', { result: data.result, jobId: data.id, error: null })
     } catch (err) {
-      setHistError(err.message)
+      setOpenError("Couldn't open that session. Please try again.")
       setOpeningId(null)
     }
   }
@@ -104,10 +105,14 @@ export default function Dashboard({ navigate, result }) {
           <div className="section-title">Past sessions</div>
 
           {histLoading && <p className="dashboard-hint">Loading history…</p>}
-          {histError && <div className="error-box">{histError}</div>}
+          {openError && <div className="error-box">{openError}</div>}
 
-          {!histLoading && !histError && sessions.length === 0 && (
-            <p className="dashboard-hint">No past sessions yet — analyze a video to start your history.</p>
+          {!histLoading && sessions.length === 0 && (
+            <p className="dashboard-hint">
+              {histError
+                ? "Session history isn't available right now."
+                : 'No past sessions yet — analyze a video to start your history.'}
+            </p>
           )}
 
           {sessions.length > 0 && (

@@ -12,9 +12,15 @@
 
 import { API_BASE, authHeaders, handleUnauthorized } from './auth'
 
-async function authedGet(path, label) {
+async function authedGet(path, label, { notFoundOk = false } = {}) {
   const res = await fetch(`${API_BASE}${path}`, { headers: { ...authHeaders() } })
   if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired — please log in again') }
+  // A 404 on a collection endpoint means "this backend build doesn't expose it
+  // yet" (deploy lag) — treat as no data rather than a hard error.
+  if (res.status === 404 && notFoundOk) {
+    console.warn(`${label}: ${API_BASE}${path} returned 404 — treating as empty`)
+    return null
+  }
   if (!res.ok) throw new Error(`${label} failed: ${res.status}`)
   return res.json()
 }
@@ -47,8 +53,11 @@ export async function getJob(jobId) {
 }
 
 // Saved analysis history for the logged-in user.
-export function getSessions() {
-  return authedGet('/sessions', 'Load history') // [{ id, created_at, total_shots, made, missed, accuracy_pct }]
+// Returns [] when the backend has no /sessions endpoint yet (404) or the user
+// has none — the Dashboard shows the same empty state either way.
+export async function getSessions() {
+  const list = await authedGet('/sessions', 'Load history', { notFoundOk: true })
+  return Array.isArray(list) ? list : []
 }
 
 export function getSession(sessionId) {
