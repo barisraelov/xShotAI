@@ -1,0 +1,162 @@
+/* ── Filter dropdowns (session window + zone), side by side ── */
+.filter-bar {
+  display: flex;
+  gap: 10px;
+  padding: 0 20px 12px;
+}
+
+.filter-select-wrap {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
+/* Decorative chevron — sits over the native select, clicks pass through to it. */
+.filter-select-wrap::after {
+  content: '▾';
+  position: absolute;
+  top: 50%;
+  right: 12px;
+  transform: translateY(-50%);
+  color: var(--orange);
+  font-size: 0.75rem;
+  line-height: 1;
+  pointer-events: none;
+}
+
+.filter-select-wrap.active .filter-select {
+  border-color: var(--orange);
+  color: var(--orange);
+}
+
+.filter-select {
+  width: 100%;
+  appearance: none;
+  -webkit-appearance: none;
+  -moz-appearance: none;
+  color-scheme: dark; /* nudge the native option panel toward a dark theme */
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.82rem;
+  font-weight: 600;
+  padding: 10px 28px 10px 14px;
+  cursor: pointer;
+  text-overflow: ellipsis;
+}
+.filter-select:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-dim);
+}
+.filter-select option {
+  background: var(--bg-card);
+  color: var(--text);
+}
+
+/* ── Chart card ── */
+.progress-chart-card {
+  margin: 4px 20px 8px;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 14px 6px 6px;
+}
+
+.progress-chart-plot {
+  position: relative;
+  width: 100%;
+  height: 220px;
+}
+
+.progress-chart-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.progress-dot {
+  cursor: pointer;
+}
+.progress-dot:hover,
+.progress-dot.active {
+  filter: drop-shadow(0 0 4px rgba(255, 107, 44, 0.6));
+}
+
+/* ── Tooltip (HTML overlay, positioned via the same % coords as the SVG) ── */
+.progress-tooltip {
+  position: absolute;
+  transform: translate(-50%, -110%);
+  background: var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 10px;
+  padding: 6px 10px;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 6px 20px rgba(0, 0, 0, 0.45);
+  z-index: 2;
+}
+.progress-tooltip.flip-below { transform: translate(-50%, 14px); }
+
+.progress-tooltip-date { color: var(--text-muted); }
+.progress-tooltip-stat { font-weight: 700; margin-top: 1px; }
+
+/* ── Coaching Patterns ── */
+.coaching-grid {
+  display: flex;
+  gap: 10px;
+  padding: 0 20px 20px;
+}
+
+.coaching-card {
+  flex: 1;
+  min-width: 0;
+  background: var(--bg-card);
+  border-radius: var(--radius);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  padding: 12px;
+}
+
+.coaching-card-title {
+  font-size: 0.72rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 10px;
+}
+
+.coaching-item + .coaching-item {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.coaching-item-text {
+  font-size: 0.82rem;
+  line-height: 1.4;
+  color: var(--text);
+}
+
+.coaching-badge {
+  display: inline-block;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--orange-dim);
+  color: var(--orange);
+  font-size: 0.68rem;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.coaching-empty {
+  color: var(--text-muted);
+  font-size: 0.8rem;
+}
