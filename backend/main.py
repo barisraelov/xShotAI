@@ -237,20 +237,18 @@ app.include_router(sessions_router.router)
 @app.get("/version")
 def version() -> dict:
     """Deploy fingerprint — unauthenticated, for verifying which commit is live."""
-    api_routes = sorted({
-        r.path for r in app.routes
-        if getattr(r, "path", "").startswith(
-            ("/analyze", "/jobs", "/auth", "/users", "/sessions")
-        )
-    })
+    # Enumerate paths via the OpenAPI schema, not app.routes: newer FastAPI
+    # represents include_router() results as lazy _IncludedRouter objects with
+    # no `.path`, so walking app.routes misses every router-mounted endpoint.
+    paths = sorted(app.openapi().get("paths", {}))
     return {
         "commit":       settings.git_sha,
         "commit_short": settings.git_sha_short,
         "branch":       settings.RAILWAY_GIT_BRANCH or None,
         "message":      settings.RAILWAY_GIT_COMMIT_MESSAGE or None,
         "started_at":   _STARTED_AT.isoformat(),
-        "routes":       api_routes,
-        "has_sessions": "/sessions" in api_routes,
+        "routes":       paths,
+        "has_sessions": "/sessions" in paths,
     }
 
 
