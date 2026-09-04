@@ -136,8 +136,7 @@ export default function Session({ navigate, result }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <Logo />
-        <button className="icon-btn" onClick={() => navigate('dashboard')}>☰</button>
+        <Logo onClick={() => navigate('dashboard')} />
       </div>
 
       <section className="session-summary-section" aria-label="Session summary">

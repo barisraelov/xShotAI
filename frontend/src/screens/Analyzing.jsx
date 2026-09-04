@@ -60,7 +60,7 @@ export default function Analyzing({ navigate, jobId, setState }) {
   return (
     <div className="screen-enter analyzing-screen">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
       </div>
 
       <div className="analyzing-center">

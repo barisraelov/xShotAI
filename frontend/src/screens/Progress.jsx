@@ -5,7 +5,7 @@ export default function Progress({ navigate }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
         <div className="top-actions"><div className="avatar" /></div>
       </div>
 

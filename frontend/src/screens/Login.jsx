@@ -26,7 +26,7 @@ export default function Login({ navigate }) {
   return (
     <div className="screen-enter auth-screen">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
       </div>
 
       <div className="auth-head">

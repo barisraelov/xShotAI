@@ -5,7 +5,7 @@ export default function Welcome({ navigate }) {
   return (
     <div className="screen-enter welcome">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
       </div>
 
       <div className="welcome-hero">

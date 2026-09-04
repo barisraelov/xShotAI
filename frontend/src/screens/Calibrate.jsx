@@ -258,7 +258,7 @@ export default function Calibrate({ navigate, file }) {
   return (
     <div className="screen-enter calibrate-screen">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
         <button className="icon-btn" onClick={() => navigate('upload')} aria-label="Cancel">✕</button>
       </div>
 

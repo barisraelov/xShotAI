@@ -58,7 +58,7 @@ export default function Dashboard({ navigate, result }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
         <div className="top-actions">
           {isAuthed() && (
             <button className="logout-btn" onClick={handleLogout}>Log out</button>
