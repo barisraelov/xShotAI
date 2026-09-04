@@ -5,10 +5,14 @@ import { isAuthed, logout } from '../auth'
 import { getSession, getSessions } from '../api'
 import './Dashboard.css'
 
+// e.g. "Sep 4, 2026 · 3:42 PM" — date + time, both in the viewer's locale and
+// local timezone (Date parses the UTC `created_at` and formats it locally).
 function formatDate(iso) {
   const d = new Date(iso)
   if (isNaN(d)) return ''
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${date} · ${time}`
 }
 
 export default function Dashboard({ navigate, result }) {
