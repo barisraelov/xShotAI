@@ -1,41 +1,24 @@
 import './CourtMap.css'
 
-// The 10 mappable zones from the backend's 11-zone taxonomy (all but the
-// "unknown" fallback, which has no natural court position and is simply not
-// drawn — see xShot-prototype/analyze_result_spec.md).
-//
-// Positions approximate real court geometry (extended > three-point > mid-range
-// as distance from the hoop at svg (50,52) shrinks; left/right split by svgCx)
-// using simple rectangular bands rather than the true curved 3pt arc, so the
-// fills stay easy to reason about — the actual arc/paint/backboard remain
-// exactly as drawn in the "Court lines on top" block below. Draw order matters:
-// corners are listed last so they paint over the small edge of the mid-wing
-// bands they visually take priority over (see ZONE_PATHS).
+// The backend's court_mapper.classify_zone() only ever produces these 4
+// polygon ids (two_left/two_right/three_left/three_right) — NOT the 11-zone
+// taxonomy in analyze_result_spec.md, which is aspirational/demo-only until
+// zone_classifier.py exists. Keep this list matching the real classifier
+// output so zone_aggregates from a live analysis actually lights up.
 const ZONES = [
-  { id: 'extended',           svgCx: 50, svgCy: 9.5 },
-  { id: 'three_left_wing',    svgCx: 19, svgCy: 21 },
-  { id: 'three_top_key',      svgCx: 50, svgCy: 21 },
-  { id: 'three_right_wing',   svgCx: 81, svgCy: 21 },
-  { id: 'mid_left_wing',      svgCx: 19, svgCy: 35.5 },
-  { id: 'mid_center',         svgCx: 50, svgCy: 35.5 },
-  { id: 'mid_right_wing',     svgCx: 81, svgCy: 35.5 },
-  { id: 'mid_baseline',       svgCx: 50, svgCy: 50 },
-  { id: 'three_left_corner',  svgCx: 10, svgCy: 45 },
-  { id: 'three_right_corner', svgCx: 90, svgCy: 45 },
+  { id: 'three_left',  svgCx: 22, svgCy: 24 },
+  { id: 'three_right', svgCx: 78, svgCy: 24 },
+  { id: 'two_left',    svgCx: 29, svgCy: 44 },
+  { id: 'two_right',   svgCx: 71, svgCy: 44 },
 ]
 
-// Zone fill paths (viewBox "0 0 100 60", hoop at cx=50 cy=52, court box x:4-96 y:4-56).
+// Zone fill paths (viewBox "0 0 100 60", hoop at cx=50 cy=52)
+// Arc midpoint at t=0.5: (50, 22). Left half: Q33,22 → (50,22). Right half: Q67,22 → (84,38).
 const ZONE_PATHS = {
-  extended:           'M 4 4  L 96 4  L 96 15 L 4 15  Z',
-  three_left_wing:    'M 4 15 L 34 15 L 34 27 L 4 27  Z',
-  three_top_key:      'M 34 15 L 66 15 L 66 27 L 34 27 Z',
-  three_right_wing:   'M 66 15 L 96 15 L 96 27 L 66 27 Z',
-  mid_left_wing:       'M 4 27 L 34 27 L 34 44 L 4 44  Z',
-  mid_center:          'M 34 27 L 66 27 L 66 44 L 34 44 Z',
-  mid_right_wing:      'M 66 27 L 96 27 L 96 44 L 66 44 Z',
-  mid_baseline:        'M 16 44 L 84 44 L 84 56 L 16 56 Z',
-  three_left_corner:   'M 4 34  L 16 34 L 16 56 L 4 56  Z',
-  three_right_corner:  'M 96 34 L 84 34 L 84 56 L 96 56 Z',
+  three_left:  'M 4 56 L 4 4 L 50 4 L 50 22 Q 33 22 16 38 L 16 56 Z',
+  three_right: 'M 96 56 L 96 4 L 50 4 L 50 22 Q 67 22 84 38 L 84 56 Z',
+  two_left:    'M 50 56 L 16 56 L 16 38 Q 33 22 50 22 Z',
+  two_right:   'M 50 56 L 84 56 L 84 38 Q 67 22 50 22 Z',
 }
 
 function zoneColor(accuracy, attempts) {
@@ -103,20 +86,20 @@ export default function CourtMap({ zoneAggregates, shotPoints }) {
         {ZONES.map(z => {
           const agg = byId[z.id]
           if (!agg?.attempts) return (
-            <text key={z.id} x={z.svgCx} y={z.svgCy + 1}
-              textAnchor="middle" fontSize="3" fill="rgba(255,255,255,0.30)">
+            <text key={z.id} x={z.svgCx} y={z.svgCy}
+              textAnchor="middle" fontSize="3.8" fill="rgba(255,255,255,0.30)">
               —
             </text>
           )
           return (
             <g key={z.id}>
-              <text x={z.svgCx} y={z.svgCy - 1.6}
-                textAnchor="middle" fontSize="3" fontWeight="bold"
-                fill="rgba(255,255,255,0.92)">
+              <text x={z.svgCx} y={z.svgCy - 2}
+                textAnchor="middle" fontSize="4.2" fontWeight="bold"
+                fill="rgba(255,255,255,0.90)">
                 {agg.accuracy_pct.toFixed(0)}%
               </text>
-              <text x={z.svgCx} y={z.svgCy + 2.1}
-                textAnchor="middle" fontSize="2.3"
+              <text x={z.svgCx} y={z.svgCy + 3}
+                textAnchor="middle" fontSize="3.2"
                 fill="rgba(255,255,255,0.55)">
                 {agg.made}/{agg.attempts}
               </text>
