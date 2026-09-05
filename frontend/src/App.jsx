@@ -8,6 +8,7 @@ import Login      from './screens/Login'
 import Register   from './screens/Register'
 import Dashboard  from './screens/Dashboard'
 import Upload     from './screens/Upload'
+import Live       from './screens/Live'
 import Calibrate  from './screens/Calibrate'
 import Analyzing  from './screens/Analyzing'
 import Session    from './screens/Session'
@@ -84,7 +85,7 @@ const INITIAL_STATE = {
   file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
 }
 
-const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate'])
+const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate', 'live'])
 
 export default function App() {
   const [state, setState] = useState(INITIAL_STATE)
@@ -111,12 +112,13 @@ export default function App() {
   }
 
   return (
-    <div className={`app-frame${noNav ? ' no-nav' : ''}`}>
+    <div className={`app-frame${noNav ? ' no-nav' : ''}${state.view === 'live' ? ' live-mode' : ''}`}>
       {state.view === 'welcome'    && <Welcome    {...screenProps} />}
       {state.view === 'login'      && <Login      {...screenProps} />}
       {state.view === 'register'   && <Register   {...screenProps} />}
       {state.view === 'dashboard'  && <Dashboard  {...screenProps} />}
       {state.view === 'upload'     && <Upload     {...screenProps} />}
+      {state.view === 'live'       && <Live       {...screenProps} />}
       {state.view === 'calibrate'  && <Calibrate  {...screenProps} />}
       {state.view === 'analyzing'  && <Analyzing  {...screenProps} setState={setState} />}
       {state.view === 'session'    && <Session    {...screenProps} />}

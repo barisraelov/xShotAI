@@ -21,6 +21,12 @@
   border-color: var(--orange);
 }
 
+.live-drop {
+  min-height: 120px;
+  border-style: solid;
+  border-color: rgba(255, 107, 44, 0.5);
+}
+
 .upload-icon { font-size: 2rem; }
 .upload-cta { font-weight: 600; }
 .upload-hint, .upload-size { font-size: 0.82rem; color: var(--text-muted); }

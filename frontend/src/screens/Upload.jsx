@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
 import { postAnalyze } from '../api'
+import { isAuthed } from '../auth'
 import './Upload.css'
 
 // ?fail=1 — trigger the stub failure path end-to-end (test only)
@@ -69,6 +70,18 @@ export default function Upload({ navigate }) {
           style={{ display: 'none' }}
           onChange={handleFile}
         />
+      </div>
+
+      <div
+        className="upload-drop live-drop"
+        onClick={() => {
+          if (!isAuthed()) { navigate('login'); return }
+          navigate('live')
+        }}
+      >
+        <div className="upload-icon">📹</div>
+        <div className="upload-cta">Live Camera</div>
+        <div className="upload-hint">Rear camera · real-time make / miss</div>
       </div>
 
       <div className="req-list">
