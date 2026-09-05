@@ -62,17 +62,19 @@ class LiveRuntime:
         self,
         live_session_id: str,
         user_id: str,
-        engine: Any,
+        engine: Any = None,
         *,
         clock: Callable[[], float] = time.monotonic,
         persist: Any = None,
         on_outbound: Optional[Callable[[dict], None]] = None,
         queue_maxsize: int = QUEUE_MAXSIZE,
         started: bool = False,
+        engine_factory: Optional[Callable[[int], Any]] = None,
     ) -> None:
         self.live_session_id = live_session_id
         self.user_id = user_id
         self.engine = engine
+        self.engine_factory = engine_factory
         self.clock = clock
         self.persist = persist
         self.on_outbound = on_outbound
@@ -118,6 +120,8 @@ class LiveRuntime:
         self.gap_count = 0
 
         self.engine_started = started
+        self.frame_width: Optional[int] = None
+        self.frame_height: Optional[int] = None
 
     # ── outbound ────────────────────────────────────────────────────────────
 
@@ -308,28 +312,41 @@ class LiveRuntime:
 
     # ── lifecycle ───────────────────────────────────────────────────────────
 
-    def ensure_engine_started(self, frame_width: int = 1280) -> None:
+    def ensure_engine_started(self, frame_width: int) -> None:
+        if int(frame_width) <= 0:
+            raise ValueError("frame_width must be positive")
         if self.engine_started:
             return
-        start = getattr(self.engine, "start", None)
+        next_idx = getattr(self.engine, "_next_shot_index", 1) if self.engine else 1
+        if self.engine is None and self.engine_factory is not None:
+            self.engine = self.engine_factory(int(frame_width))
+            if hasattr(self.engine, "_next_shot_index"):
+                self.engine._next_shot_index = next_idx
+            self.engine_started = True
+            return
+        start = getattr(self.engine, "start", None) if self.engine is not None else None
         if start is not None:
             start(
                 model=getattr(self.engine, "_model", None),
-                frame_width=frame_width,
+                frame_width=int(frame_width),
                 total_frames=None,
                 video_path=None,
                 person_model=None,
                 collect_weak_detections=False,
             )
+        elif self.engine_factory is not None:
+            self.engine = self.engine_factory(int(frame_width))
+            if hasattr(self.engine, "_next_shot_index"):
+                self.engine._next_shot_index = next_idx
         self.engine_started = True
 
     def go(self, now: Optional[float] = None) -> None:
-        if self.go_started:
-            return
         now = self.clock() if now is None else now
+        if self.go_started:
+            self._emit({"type": "go_ack", "live_session_id": self.live_session_id})
+            return
         self.status = STATUS_ACTIVE
         self.go_started = True
-        self.generation = 0
         self.queue.clear()
         self.metadata.clear()
         self.max_seen_id = -1
@@ -344,9 +361,8 @@ class LiveRuntime:
         self.degraded_since = None
         self._last_e2e_ms = None
         self._latency_high_since = None
-        self.ensure_engine_started()
         if self.persist is not None:
-            self.persist.activate(self.live_session_id)
+            self.persist.activate(self.live_session_id, user_id=self.user_id)
         live_log("LIVE-18", "go", live_session_id=self.live_session_id, user_id=self.user_id)
         self._emit({"type": "go_ack", "live_session_id": self.live_session_id})
 
@@ -428,20 +444,24 @@ class LiveRuntime:
         self.reconnect_count += 1
         aborted_open = False
         if gap > RECONNECT_KEEP_ENGINE_S:
-            has_open = bool(getattr(self.engine, "has_open_shot", lambda: False)())
-            if not has_open and hasattr(self.engine, "open_shots"):
-                has_open = bool(self.engine.open_shots)
-            if has_open:
-                abort = getattr(self.engine, "abort_open_shot", None)
-                if abort is not None:
-                    abort()
-                aborted_open = True
-                live_log(
-                    "LIVE-17",
-                    "abort_open_shot",
-                    live_session_id=self.live_session_id,
-                    gap_s=gap,
-                )
+            has_open = False
+            if self.engine is not None:
+                has_open = bool(getattr(self.engine, "has_open_shot", lambda: False)())
+                if not has_open and hasattr(self.engine, "open_shots"):
+                    has_open = bool(self.engine.open_shots)
+            self.generation += 1
+            dumped = self.queue.clear()
+            self._replace_or_reset_engine(reason="reconnect_gap")
+            aborted_open = has_open
+            live_log(
+                "LIVE-17",
+                "generation_bump",
+                live_session_id=self.live_session_id,
+                gap_s=gap,
+                generation=self.generation,
+                dropped_waiting=len(dumped),
+                aborted_open=aborted_open,
+            )
         live_log(
             "LIVE-17",
             "reconnect",
@@ -525,6 +545,7 @@ class LiveRuntime:
             header=header,
             jpeg=jpeg,
             received_at=now,
+            generation=self.generation,
         )
         dropped = self.queue.put(item)
         self.max_queue_size = max(self.max_queue_size, len(self.queue))
@@ -587,22 +608,125 @@ class LiveRuntime:
         frame = cv2.imdecode(arr, cv2.IMREAD_COLOR)
         return frame
 
+    def _next_shot_index(self) -> int:
+        if self.engine is None:
+            return 1 + len(self.decided_shots)
+        return getattr(self.engine, "_next_shot_index", 1 + len(self.decided_shots))
+
+    def _replace_or_reset_engine(self, *, reason: str, frame_width: Optional[int] = None) -> Any:
+        """Abandon the current engine instance (or reset it) for a new generation."""
+        width = frame_width or self.frame_width
+        next_idx = self._next_shot_index()
+        live_log(
+            "LIVE-17",
+            "engine_reset",
+            live_session_id=self.live_session_id,
+            reason=reason,
+            generation=self.generation,
+            frame_width=width,
+        )
+        if self.engine_factory is not None and width:
+            self.engine = self.engine_factory(int(width))
+            if hasattr(self.engine, "_next_shot_index"):
+                self.engine._next_shot_index = next_idx
+            self.engine_started = True
+            return self.engine
+        if self.engine is not None:
+            reset = getattr(self.engine, "reset_open_tracking", None)
+            if reset is not None:
+                reset()
+            else:
+                abort = getattr(self.engine, "abort_open_shot", None)
+                if abort is not None:
+                    abort()
+        return self.engine
+
+    def _engine_for_decoded_frame(self, frame_bgr: Any, header: dict) -> tuple[Any, bool]:
+        """Bind scoring to decoded pixels. Returns (engine, dim_changed)."""
+        if frame_bgr is None:
+            if self.engine is not None and not self.engine_started:
+                # Tests may feed empty JPEG; do not invent a 1280 scoring width.
+                return self.engine, False
+            return self.engine, False
+        height, width = int(frame_bgr.shape[0]), int(frame_bgr.shape[1])
+        header_w = int(header.get("width") or 0)
+        header_h = int(header.get("height") or 0)
+        if (header_w and header_w != width) or (header_h and header_h != height):
+            live_log(
+                "LIVE-09",
+                "dimension_mismatch",
+                live_session_id=self.live_session_id,
+                header_width=header_w,
+                header_height=header_h,
+                decoded_width=width,
+                decoded_height=height,
+            )
+        if self.frame_width is None:
+            self.frame_width = width
+            self.frame_height = height
+            self.ensure_engine_started(width)
+            return self.engine, False
+        if width != self.frame_width or height != self.frame_height:
+            live_log(
+                "LIVE-07",
+                "dimension_change",
+                live_session_id=self.live_session_id,
+                old_width=self.frame_width,
+                old_height=self.frame_height,
+                new_width=width,
+                new_height=height,
+            )
+            self.generation += 1
+            self.queue.clear()
+            self.frame_width = width
+            self.frame_height = height
+            engine = self._replace_or_reset_engine(
+                reason="dimension_change", frame_width=width
+            )
+            return engine, True
+        if not self.engine_started:
+            self.ensure_engine_started(width)
+        return self.engine, False
+
     def process_one(self, now: Optional[float] = None) -> ProcessOutcome:
         """Serial engine step. Safe to call from a worker thread (LIVE-04)."""
         with self._proc_lock:
             item = self.queue.pop()
             if item is None:
                 return ProcessOutcome(ignored=True)
-            gen = self.generation
-            status = self.status
-            if status != STATUS_ACTIVE:
+            start_gen = self.generation
+            if self.status != STATUS_ACTIVE or item.generation != start_gen:
+                live_log(
+                    "LIVE-17",
+                    "stale_generation_frame",
+                    frame_id=item.frame_id,
+                    live_session_id=self.live_session_id,
+                    frame_generation=item.generation,
+                    current_generation=self.generation,
+                )
                 return ProcessOutcome(ignored=True, frame_id=item.frame_id)
 
             start = self.clock() if now is None else now
             frame_bgr = self._decode_jpeg(item.jpeg)
-            decided = self.engine.process_frame(frame_bgr, item.frame_id)
+            engine, dim_changed = self._engine_for_decoded_frame(frame_bgr, item.header)
+            if engine is None:
+                return ProcessOutcome(ignored=True, frame_id=item.frame_id)
+            if self.status != STATUS_ACTIVE:
+                return ProcessOutcome(ignored=True, frame_id=item.frame_id)
+            if self.generation != start_gen and not dim_changed:
+                live_log(
+                    "LIVE-17",
+                    "stale_generation_frame",
+                    frame_id=item.frame_id,
+                    live_session_id=self.live_session_id,
+                    frame_generation=item.generation,
+                    current_generation=self.generation,
+                )
+                return ProcessOutcome(ignored=True, frame_id=item.frame_id)
+            commit_gen = self.generation
+            decided = engine.process_frame(frame_bgr, item.frame_id)
             end = self.clock()
-            return self._commit_process(item, gen, decided, start, end)
+            return self._commit_process(item, commit_gen, decided, start, end, engine=engine)
 
     def _commit_process(
         self,
@@ -611,6 +735,7 @@ class LiveRuntime:
         decided: list,
         start: float,
         end: float,
+        engine: Any = None,
     ) -> ProcessOutcome:
         if self.generation != gen or self.status != STATUS_ACTIVE:
             live_log(
@@ -623,10 +748,13 @@ class LiveRuntime:
             )
             return ProcessOutcome(ignored=True, frame_id=item.frame_id)
 
+        src = engine if engine is not None else self.engine
         self.frames_processed += 1
         capture_ms = float(item.header.get("capture_timestamp_monotonic_ms") or 0)
         e2e_ms = self._e2e_ms(capture_ms, end)
         self._record_e2e(e2e_ms, end)
+        events = getattr(src, "shot_events", None) or []
+        active_id = events[-1].get("shot_id") if events else None
         self._add_meta(
             {
                 "frame_id": item.frame_id,
@@ -638,8 +766,8 @@ class LiveRuntime:
                 "dropped": False,
                 "width": item.header.get("width"),
                 "height": item.header.get("height"),
-                "engine_mode": _mode_name(self.engine),
-                "active_shot_id": self._engine_shot_id(),
+                "engine_mode": _mode_name(src),
+                "active_shot_id": active_id,
                 "queue_size": len(self.queue),
                 "e2e_latency_ms": e2e_ms,
                 "degraded": self.degraded,
@@ -650,7 +778,7 @@ class LiveRuntime:
 
         kept: list[Any] = []
         for shot in decided or []:
-            payload = self._persist_shot(shot)
+            payload = self._persist_shot(shot, engine=engine)
             if payload is None:
                 continue
             kept.append(shot)
@@ -668,7 +796,7 @@ class LiveRuntime:
             self._emit(event)
         return ProcessOutcome(ignored=False, decided=kept, frame_id=item.frame_id)
 
-    def _persist_shot(self, shot: Any) -> Optional[dict]:
+    def _persist_shot(self, shot: Any, engine: Any = None) -> Optional[dict]:
         shot_id = getattr(shot, "shot_id", None)
         result = getattr(shot, "result", None)
         decision_frame = getattr(shot, "decision_frame", None)
@@ -683,6 +811,7 @@ class LiveRuntime:
             )
             return self.decided_shots[shot_id]
 
+        src = engine if engine is not None else self.engine
         payload = None
         if self.persist is not None:
             payload = self.persist.upsert_shot(
@@ -690,11 +819,11 @@ class LiveRuntime:
                 shot_id=shot_id,
                 result=result,
                 decision_frame=decision_frame,
-                engine=self.engine,
+                engine=src,
                 degraded=self.degraded,
             )
         if payload is None:
-            payload = _shot_point_from_engine(self.engine, shot, self.degraded)
+            payload = _shot_point_from_engine(src, shot, self.degraded)
         self.decided_shots[shot_id] = payload
         live_log(
             "LIVE-16",

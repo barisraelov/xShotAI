@@ -103,6 +103,54 @@ class LiveWsTests(unittest.TestCase):
         self.assertEqual(self.engines[0].frames, [0, 1, 2])
         self.assertTrue(self.persist.history)
 
+    def test_prepare_does_not_insert_session_row(self) -> None:
+        with self.client.websocket_connect("/live") as ws:
+            ws.send_text(json.dumps({"type": "auth", "access_token": "good-token"}))
+            _recv_until(ws, "auth_ok")
+            ws.send_text(json.dumps({"type": "prepare"}))
+            _recv_until(ws, "prepared")
+            self.assertEqual(self.persist.sessions, {})
+            self.assertEqual(self.persist.history, [])
+
+    def test_prepare_disconnect_leaves_no_session_row(self) -> None:
+        with self.client.websocket_connect("/live") as ws:
+            ws.send_text(json.dumps({"type": "auth", "access_token": "good-token"}))
+            _recv_until(ws, "auth_ok")
+            ws.send_text(json.dumps({"type": "prepare"}))
+            _recv_until(ws, "prepared")
+        self.assertEqual(self.persist.sessions, {})
+        self.assertEqual(self.persist.history, [])
+
+    def test_go_creates_one_active_row_and_is_idempotent(self) -> None:
+        with self.client.websocket_connect("/live") as ws:
+            ws.send_text(json.dumps({"type": "auth", "access_token": "good-token"}))
+            _recv_until(ws, "auth_ok")
+            ws.send_text(json.dumps({"type": "prepare"}))
+            prepared = _recv_until(ws, "prepared")
+            sid = prepared["live_session_id"]
+            ws.send_text(json.dumps({"type": "go"}))
+            _recv_until(ws, "go_ack")
+            self.assertEqual(len(self.persist.sessions), 1)
+            self.assertEqual(self.persist.sessions[sid]["status"], "active")
+            ws.send_text(json.dumps({"type": "go"}))
+            _recv_until(ws, "go_ack")
+            self.assertEqual(len(self.persist.sessions), 1)
+
+    def test_frames_before_go_are_not_processed(self) -> None:
+        with self.client.websocket_connect("/live") as ws:
+            ws.send_text(json.dumps({"type": "auth", "access_token": "good-token"}))
+            _recv_until(ws, "auth_ok")
+            ws.send_text(json.dumps({"type": "prepare"}))
+            prepared = _recv_until(ws, "prepared")
+            sid = prepared["live_session_id"]
+            for i in range(3):
+                ws.send_bytes(pack_frame(_header(sid, i), b""))
+            ws.send_text(json.dumps({"type": "ping", "t": 1}))
+            _recv_until(ws, "pong")
+            self.assertEqual(self.engines[0].frames, [])
+            self.assertEqual(self.persist.shots, {})
+            self.assertEqual(self.persist.sessions, {})
+
 
 if __name__ == "__main__":
     unittest.main()

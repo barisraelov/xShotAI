@@ -15,6 +15,7 @@ class QueuedFrame:
     header: dict[str, Any]
     jpeg: bytes
     received_at: float
+    generation: int = 0
     extra: dict[str, Any] = field(default_factory=dict)
 
 

@@ -1,7 +1,15 @@
-import { API_BASE } from '../auth'
+import { getLiveRuntimeConfig, livePageWsUrl } from './liveConfig'
 
 export function liveWsUrl() {
-  if (API_BASE) return API_BASE.replace(/^http/i, 'ws') + '/live'
-  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/live`
+  const cfg = getLiveRuntimeConfig()
+  if (!cfg.ok || cfg.blocked) {
+    throw new Error(cfg.message || 'Live is not configured')
+  }
+  if (cfg.wsUrl) return cfg.wsUrl
+  return livePageWsUrl()
+}
+
+export function liveConfigBlocked() {
+  const cfg = getLiveRuntimeConfig()
+  return cfg.blocked ? cfg : null
 }

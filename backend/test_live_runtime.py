@@ -40,6 +40,7 @@ class RecordingEngine:
         self.max_concurrent = 0
         self._gate = threading.Lock()
         self.global_mode = type("M", (), {"name": "IDLE"})()
+        self._next_shot_index = 1
 
     def start(self, **kwargs) -> None:
         self.start_kwargs = kwargs
@@ -71,8 +72,12 @@ class RecordingEngine:
                 self.concurrent -= 1
 
     def abort_open_shot(self) -> None:
-        self.aborted += 1
+        if self.open_shots:
+            self.aborted += 1
         self.open_shots.clear()
+
+    def reset_open_tracking(self) -> None:
+        self.abort_open_shot()
 
     def has_open_shot(self) -> bool:
         return bool(self.open_shots)
@@ -81,14 +86,31 @@ class RecordingEngine:
         return self.shot_events, {}
 
 
-def _header(sid: str, frame_id: int, capture_ms: float = 0.0) -> dict:
+def jpeg_of(width: int, height: int) -> bytes:
+    import cv2
+    import numpy as np
+
+    img = np.zeros((int(height), int(width), 3), dtype=np.uint8)
+    ok, buf = cv2.imencode(".jpg", img, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
+    if not ok:
+        raise RuntimeError("jpeg encode failed")
+    return buf.tobytes()
+
+
+def _header(
+    sid: str,
+    frame_id: int,
+    capture_ms: float = 0.0,
+    width: int = 16,
+    height: int = 16,
+) -> dict:
     return {
         "protocol_version": PROTOCOL_VERSION,
         "live_session_id": sid,
         "frame_id": frame_id,
         "capture_timestamp_monotonic_ms": capture_ms,
-        "width": 16,
-        "height": 16,
+        "width": width,
+        "height": height,
         "jpeg_quality": JPEG_QUALITY,
     }
 
@@ -357,18 +379,276 @@ class LiveRuntimeTests(unittest.TestCase):
         rt = _runtime(persist=persist)
         persist.create_prepare(rt.live_session_id, rt.user_id)
         self.assertEqual(persist.history, [])
+        self.assertEqual(persist.sessions, {})
         rt.complete(reason="abandon")
         self.assertEqual(persist.history, [])
+        self.assertEqual(persist.sessions, {})
 
     def test_live_engine_start_skips_weak_hoop(self) -> None:
         engine = RecordingEngine()
         rt = _runtime(engine=engine)
         rt.go()
+        jpeg = jpeg_of(32, 24)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=32, height=24), jpeg)
+        rt.process_one()
         self.assertIsNotNone(engine.start_kwargs)
+        self.assertEqual(engine.start_kwargs["frame_width"], 32)
         self.assertFalse(engine.start_kwargs["collect_weak_detections"])
         self.assertIsNone(engine.start_kwargs["person_model"])
         self.assertIsNone(engine.start_kwargs["video_path"])
         self.assertIsNone(engine.start_kwargs["total_frames"])
+        self.assertEqual(rt.frame_width, 32)
+        self.assertEqual(rt.frame_height, 24)
+
+
+class LiveRuntimeFixTests(unittest.TestCase):
+    """FIX-03 / FIX-04 / FIX-06 — generation, decoded width, GO persistence."""
+
+    def test_prepare_only_has_no_db_row(self) -> None:
+        persist = MemoryLivePersist()
+        rt = _runtime(persist=persist)
+        persist.create_prepare(rt.live_session_id, rt.user_id)
+        self.assertEqual(persist.sessions, {})
+
+    def test_prepare_disconnect_timeout_has_no_db_row(self) -> None:
+        clock = FakeClock(0.0)
+        persist = MemoryLivePersist()
+        rt = _runtime(persist=persist, clock=clock)
+        persist.create_prepare(rt.live_session_id, rt.user_id)
+        rt.on_disconnect()
+        clock.t = 10.0
+        rt.check_auto_complete()
+        self.assertEqual(persist.sessions, {})
+        self.assertEqual(persist.history, [])
+        self.assertEqual(rt.status, STATUS_COMPLETED)
+
+    def test_go_creates_one_active_row(self) -> None:
+        persist = MemoryLivePersist()
+        rt = _runtime(persist=persist)
+        rt.go()
+        self.assertEqual(len(persist.sessions), 1)
+        row = persist.sessions[rt.live_session_id]
+        self.assertEqual(row["status"], "active")
+        rt.go()
+        self.assertEqual(len(persist.sessions), 1)
+        self.assertEqual(persist.sessions[rt.live_session_id]["status"], "active")
+
+    def test_frames_before_go_are_ignored(self) -> None:
+        persist = MemoryLivePersist()
+        engine = RecordingEngine()
+        rt = _runtime(engine=engine, persist=persist)
+        self.assertEqual(
+            rt.accept_frame(_header(rt.live_session_id, 0), jpeg_of(16, 16)),
+            "ignored",
+        )
+        self.assertEqual(rt.process_one().ignored, True)
+        self.assertEqual(engine.frames, [])
+        self.assertEqual(persist.shots, {})
+        self.assertEqual(persist.sessions, {})
+
+    def test_reconnect_over_500ms_drops_queue_and_inflight(self) -> None:
+        clock = FakeClock(0.0)
+        created: list[RecordingEngine] = []
+
+        def factory(width: int) -> RecordingEngine:
+            engine = RecordingEngine()
+            engine.start(
+                model=None,
+                frame_width=width,
+                total_frames=None,
+                video_path=None,
+                person_model=None,
+                collect_weak_detections=False,
+            )
+            created.append(engine)
+            return engine
+
+        first = factory(16)
+        kept = ShotDecided(shot_id="s001", result="missed", decision_frame=0)
+        stale = ShotDecided(shot_id="s099", result="made", decision_frame=1)
+        first.decide_on[0] = kept
+        persist = MemoryLivePersist()
+        jpeg = jpeg_of(16, 16)
+        outbound: list[dict] = []
+        rt = LiveRuntime(
+            "live-1",
+            "user-1",
+            first,
+            clock=clock,
+            persist=persist,
+            on_outbound=outbound.append,
+            engine_factory=factory,
+        )
+        rt.go()
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertIn("s001", rt.decided_shots)
+
+        first.block = True
+        first.decide_on[1] = stale
+        first.open_shots.append(object())
+        rt.accept_frame(_header(rt.live_session_id, 1, width=16, height=16), jpeg)
+        rt.accept_frame(_header(rt.live_session_id, 2, width=16, height=16), jpeg)
+        rt.accept_frame(_header(rt.live_session_id, 3, width=16, height=16), jpeg)
+        self.assertEqual(len(rt.queue), 3)
+
+        thread = threading.Thread(target=rt.process_one)
+        thread.start()
+        self.assertTrue(first.in_process.wait(timeout=2))
+        self.assertGreaterEqual(len(rt.queue), 1)
+
+        gen_before = rt.generation
+        rt.on_disconnect()
+        clock.t = 0.8
+        info = rt.on_reconnect("user-1")
+        self.assertTrue(info["aborted_open"])
+        self.assertGreater(rt.generation, gen_before)
+        self.assertEqual(len(rt.queue), 0)
+        self.assertIsNot(rt.engine, first)
+
+        first.release.set()
+        thread.join(timeout=5)
+        self.assertNotIn("s099", rt.decided_shots)
+        self.assertIn("s001", rt.decided_shots)
+        self.assertFalse(any(m.get("shot_id") == "s099" for m in outbound))
+        self.assertFalse(rt.engine.has_open_shot())
+
+        rt.accept_frame(_header(rt.live_session_id, 4, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertNotIn("s099", rt.decided_shots)
+        self.assertIn(4, rt.engine.frames)
+        self.assertNotIn(1, rt.engine.frames)
+
+    def test_reconnect_under_500ms_keeps_engine(self) -> None:
+        clock = FakeClock(0.0)
+        created: list[RecordingEngine] = []
+
+        def factory(width: int) -> RecordingEngine:
+            engine = RecordingEngine()
+            created.append(engine)
+            return engine
+
+        first = factory(16)
+        first.open_shots.append(object())
+        jpeg = jpeg_of(16, 16)
+        rt = LiveRuntime(
+            "live-1",
+            "user-1",
+            first,
+            clock=clock,
+            persist=MemoryLivePersist(),
+            on_outbound=lambda _p: None,
+            engine_factory=factory,
+        )
+        rt.go()
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        gen = rt.generation
+        rt.on_disconnect()
+        clock.t = 0.4
+        info = rt.on_reconnect("user-1")
+        self.assertFalse(info["aborted_open"])
+        self.assertEqual(rt.generation, gen)
+        self.assertIs(rt.engine, first)
+        self.assertEqual(len(first.open_shots), 1)
+        self.assertEqual(len(created), 1)
+
+    def test_scoring_width_landscape_1280x720(self) -> None:
+        engine = RecordingEngine()
+        rt = _runtime(engine=engine)
+        rt.go()
+        jpeg = jpeg_of(1280, 720)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=1280, height=720), jpeg)
+        rt.process_one()
+        self.assertEqual(rt.frame_width, 1280)
+        self.assertEqual(rt.frame_height, 720)
+        self.assertEqual(engine.start_kwargs["frame_width"], 1280)
+
+    def test_scoring_width_landscape_854x480(self) -> None:
+        engine = RecordingEngine()
+        rt = _runtime(engine=engine)
+        rt.go()
+        jpeg = jpeg_of(854, 480)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=854, height=480), jpeg)
+        rt.process_one()
+        self.assertEqual(rt.frame_width, 854)
+        self.assertEqual(engine.start_kwargs["frame_width"], 854)
+
+    def test_scoring_width_portrait_720x1280(self) -> None:
+        engine = RecordingEngine()
+        rt = _runtime(engine=engine)
+        rt.go()
+        jpeg = jpeg_of(720, 1280)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=720, height=1280), jpeg)
+        rt.process_one()
+        self.assertEqual(rt.frame_width, 720)
+        self.assertEqual(rt.frame_height, 1280)
+        self.assertEqual(engine.start_kwargs["frame_width"], 720)
+
+    def test_decoded_width_wins_over_header(self) -> None:
+        engine = RecordingEngine()
+        rt = _runtime(engine=engine)
+        rt.go()
+        jpeg = jpeg_of(854, 480)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=1280, height=720), jpeg)
+        rt.process_one()
+        self.assertEqual(rt.frame_width, 854)
+        self.assertEqual(rt.frame_height, 480)
+        self.assertEqual(engine.start_kwargs["frame_width"], 854)
+
+    def test_dimension_change_aborts_open_keeps_decided(self) -> None:
+        created: list[RecordingEngine] = []
+
+        def factory(width: int) -> RecordingEngine:
+            engine = RecordingEngine()
+            engine.start(
+                model=None,
+                frame_width=width,
+                total_frames=None,
+                video_path=None,
+                person_model=None,
+                collect_weak_detections=False,
+            )
+            created.append(engine)
+            return engine
+
+        first = factory(1280)
+        kept = ShotDecided(shot_id="s001", result="made", decision_frame=0)
+        first.decide_on[0] = kept
+        persist = MemoryLivePersist()
+        rt = LiveRuntime(
+            "live-1",
+            "user-1",
+            first,
+            persist=persist,
+            on_outbound=lambda _p: None,
+            engine_factory=factory,
+        )
+        rt.go()
+        rt.accept_frame(
+            _header(rt.live_session_id, 0, width=1280, height=720),
+            jpeg_of(1280, 720),
+        )
+        rt.process_one()
+        first.open_shots.append(object())
+        gen = rt.generation
+
+        late = ShotDecided(shot_id="s002", result="missed", decision_frame=1)
+        first.decide_on[1] = late
+        rt.accept_frame(
+            _header(rt.live_session_id, 1, width=720, height=1280),
+            jpeg_of(720, 1280),
+        )
+        outcome = rt.process_one()
+        self.assertFalse(outcome.ignored)
+        self.assertGreater(rt.generation, gen)
+        self.assertEqual(rt.frame_width, 720)
+        self.assertEqual(rt.frame_height, 1280)
+        self.assertIn("s001", rt.decided_shots)
+        self.assertIsNot(rt.engine, first)
+        self.assertFalse(rt.engine.has_open_shot())
+        self.assertEqual(rt.engine.start_kwargs["frame_width"], 720)
+        self.assertNotIn("s002", rt.decided_shots)
 
 
 if __name__ == "__main__":

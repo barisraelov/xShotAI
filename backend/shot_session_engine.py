@@ -433,6 +433,11 @@ class ShotSessionEngine:
         self.cooldown_until = -1
         self.global_mode = PipelineMode.IDLE
 
+    def reset_open_tracking(self) -> None:
+        """LIVE-17: drop open shot plus ball trail so a long gap cannot resume it."""
+        self.abort_open_shot()
+        self.ball_pos = []
+
     def finalize(self) -> tuple[list[dict], dict]:
         diag = {
             "hoop_raw_count": self.hoop_raw_count,

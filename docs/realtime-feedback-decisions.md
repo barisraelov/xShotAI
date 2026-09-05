@@ -44,6 +44,34 @@ Example log line:
 | LIVE-24 | Location data shape matches Skip Location (`origin.court` and `zone` stay null). Do not invent `"unknown"` zones. |
 | LIVE-25 | Isolated Vercel Preview + Railway staging + separate DB. Never Production. Migrations only on staging. |
 
+## LIVE-25 environment (Staging / Preview only — do not use Production)
+
+Do **not** set these on Vercel Production, Railway Production, or the Production
+database. Do **not** copy Production `DATABASE_URL`.
+
+### Vercel Preview (frontend)
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `VITE_API_URL` | **Yes** | Staging backend origin only, e.g. `https://YOUR-STAGING-SERVICE.up.railway.app`. Missing value **blocks Live**; it must never fall back to `xshotai.up.railway.app`. |
+| `VITE_VERCEL_ENV` | Recommended | Set to `preview` so Live refuses a Production API URL. |
+
+HTTPS Staging becomes WSS automatically: `https://…` → `wss://…/live`.
+
+See `frontend/.env.staging.example`. `frontend/.env.example` has an empty
+`VITE_API_URL` for local Vite proxy.
+
+### Railway Staging (backend)
+
+| Variable | Required | Notes |
+| --- | --- | --- |
+| `DATABASE_URL` | **Yes** | New empty Staging Postgres. **Never** Production. |
+| CORS allowed origins | **Yes** | Include the Vercel Preview URL. |
+
+Live tables: `backend/migrations/001_live_sessions.sql`. Do not run that
+file until Staging exists. An empty Staging DB may also rely on
+`create_all` at boot. Never run it on Production.
+
 ## Binary frame (LIVE-05 / LIVE-09)
 
 ```

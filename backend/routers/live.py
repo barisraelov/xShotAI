@@ -245,17 +245,22 @@ async def live_socket(websocket: WebSocket) -> None:
                 await _send(websocket, event)
         else:
             live_session_id = resume_id or str(uuid.uuid4())
-            engine = await _warmup_engine(websocket)
+            warmed = await _warmup_engine(websocket)
+            engine = None
+            engine_factory = None
+            if callable(warmed) and not hasattr(warmed, "process_frame"):
+                engine_factory = warmed
+            else:
+                engine = warmed
             runtime = LiveRuntime(
                 live_session_id,
                 user.id,
                 engine,
                 persist=persist,
                 on_outbound=emit,
-                started=True,
+                started=False,
+                engine_factory=engine_factory,
             )
-            runtime.engine_started = True
-            persist.create_prepare(live_session_id, user.id)
             registry[live_session_id] = runtime
             await _send(websocket, {
                 "type": "prepared",

@@ -145,10 +145,22 @@ def get_live_session(db: DbSession, live_session_id: str) -> Optional[LiveSessio
     return db.get(LiveSession, live_session_id)
 
 
-def activate_live_session(db: DbSession, live_session_id: str) -> Optional[LiveSession]:
+def ensure_active_live_session(
+    db: DbSession, *, live_session_id: str, user_id: str
+) -> LiveSession:
+    """Create the live_sessions row on GO, or reuse it (LIVE-18 idempotent)."""
     row = db.get(LiveSession, live_session_id)
     if row is None:
-        return None
+        row = LiveSession(
+            id=live_session_id,
+            user_id=user_id,
+            status="active",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
     if row.status == "prepare":
         row.status = "active"
         row.started_at = datetime.now(timezone.utc)

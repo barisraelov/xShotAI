@@ -100,8 +100,10 @@ describe('LIVE-20 / LIVE-21 audio', () => {
 describe('LIVE-19 / LIVE-22 Stop and warning copy', () => {
   it('sends stop and keeps overload copy', () => {
     const jsx = readFileSync(join(here, '..', 'screens', 'Live.jsx'), 'utf8')
-    assert.match(jsx, /type: 'stop'/)
-    assert.match(jsx, /enterStopping/)
+    const session = readFileSync(join(here, 'clientSession.js'), 'utf8')
+    assert.match(jsx, /requestStop/)
+    assert.match(session, /type: 'stop'/)
+    assert.match(session, /enterStopping/)
     assert.match(jsx, /Start Live/)
     assert.match(jsx, /unlockSounds/)
     assert.match(jsx, /facingMode: \{ ideal: 'environment' \}/)

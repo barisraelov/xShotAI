@@ -9,11 +9,11 @@ import {
   unlockSounds,
   createPlayedSet,
 } from '../live/audio'
-import { liveWsUrl } from '../live/wsUrl'
+import { liveWsUrl, liveConfigBlocked } from '../live/wsUrl'
+import { createLiveClientSession } from '../live/clientSession'
 import './Live.css'
 
 const BUFFER_LIMIT = 512 * 1024
-const CLOCK_RESYNC_MS = 30000
 const HUMAN_OVERLOAD = 'החיבור או העיבוד איטיים כרגע — ייתכן עיכוב בזיהוי.'
 
 function formatTime(ms) {
@@ -27,6 +27,7 @@ function connLabel(state) {
   if (state === 'prepared') return 'Ready'
   if (state === 'connecting' || state === 'preview') return 'Connecting'
   if (state === 'reconnecting') return 'Reconnecting'
+  if (state === 'stopping') return 'Stopping'
   return 'Offline'
 }
 
@@ -43,10 +44,10 @@ export default function Live({ navigate }) {
   const pingTRef = useRef(null)
   const goAtRef = useRef(null)
   const statsRef = useRef({ captured: 0, sent: 0, dropped: 0 })
-  const stoppingRef = useRef(false)
   const reconnectTimer = useRef(null)
   const mutedRef = useRef(false)
   const handlerRef = useRef(null)
+  const sessionRef = useRef(null)
 
   const [phase, setPhase] = useState('preview')
   const [countdown, setCountdown] = useState(null)
@@ -63,6 +64,60 @@ export default function Live({ navigate }) {
   const [tick, setTick] = useState(0)
   const [trackInfo, setTrackInfo] = useState(null)
 
+  if (!sessionRef.current) {
+    sessionRef.current = createLiveClientSession({
+      send(obj) {
+        const ws = wsRef.current
+        if (ws && ws.readyState === 1) ws.send(JSON.stringify(obj))
+      },
+      isOpen() {
+        return wsRef.current?.readyState === 1
+      },
+      startCapture() {
+        startCapture()
+      },
+      stopCapture() {
+        captureStopRef.current?.()
+      },
+      onPhase: setPhase,
+      onCountdown: setCountdown,
+      onConn: setConn,
+      onError: setErr,
+      onNavigateSession(msg) {
+        navigate('session', {
+          result: msg.result,
+          jobId: msg.session_id || liveSessionIdRef.current,
+          error: null,
+        })
+      },
+      onNavigateUpload() {
+        navigate('upload')
+      },
+      resetFrameId() {
+        frameIdRef.current = 0
+        goAtRef.current = Date.now()
+      },
+      resetStats() {
+        statsRef.current = { captured: 0, sent: 0, dropped: 0 }
+      },
+      getStats() {
+        return statsRef.current
+      },
+      enterLive() {
+        gateRef.current.enterLive()
+      },
+      enterCountdown() {
+        gateRef.current.enterCountdown()
+      },
+      enterStopping() {
+        gateRef.current.enterStopping()
+      },
+      resetGate() {
+        gateRef.current.reset()
+      },
+    })
+  }
+
   useEffect(() => { mutedRef.current = muted }, [muted])
 
   useEffect(() => {
@@ -72,6 +127,11 @@ export default function Live({ navigate }) {
   useEffect(() => {
     if (!isAuthed()) {
       navigate('login')
+      return undefined
+    }
+    const blocked = liveConfigBlocked()
+    if (blocked) {
+      setErr(blocked.message)
       return undefined
     }
     let stream
@@ -111,7 +171,7 @@ export default function Live({ navigate }) {
     connectWs()
     return () => {
       cancelled = true
-      stoppingRef.current = true
+      sessionRef.current?.dispose()
       stream?.getTracks().forEach(t => t.stop())
       captureStopRef.current?.()
       clearTimeout(reconnectTimer.current)
@@ -127,13 +187,11 @@ export default function Live({ navigate }) {
   }, [phase])
 
   function handleMessage(msg) {
+    const session = sessionRef.current
     if (msg.type === 'prepared') {
       liveSessionIdRef.current = msg.live_session_id
       playedRef.current = createPlayedSet(msg.live_session_id, window.sessionStorage)
-      setConn(msg.resumed ? 'live' : 'prepared')
-      if (msg.resumed && gateRef.current.phase === 'live') {
-        startCapture()
-      }
+      session.handlePrepared(msg)
     } else if (msg.type === 'pong') {
       const t0 = pingTRef.current
       if (t0 != null && wsRef.current?.readyState === 1) {
@@ -143,8 +201,9 @@ export default function Live({ navigate }) {
         wsRef.current.send(JSON.stringify({ type: 'clock_offset', offset_ms: offset, rtt_ms: rtt }))
       }
     } else if (msg.type === 'go_ack') {
-      setConn('live')
+      session.handleGoAck()
     } else if (msg.type === 'shot_decided') {
+      if (!session.handleShotDecided()) return
       const played = playedRef.current || createPlayedSet(liveSessionIdRef.current, window.sessionStorage)
       playedRef.current = played
       const sounds = soundsRef.current
@@ -174,14 +233,7 @@ export default function Live({ navigate }) {
       setPrompt(true)
       setDegraded(true)
     } else if (msg.type === 'session_complete') {
-      captureStopRef.current?.()
-      gateRef.current.enterStopping()
-      setPhase('stopping')
-      navigate('session', {
-        result: msg.result,
-        jobId: msg.session_id || liveSessionIdRef.current,
-        error: null,
-      })
+      session.handleSessionComplete(msg)
     } else if (msg.type === 'error') {
       setErr(msg.message || 'Live connection error')
     }
@@ -190,8 +242,19 @@ export default function Live({ navigate }) {
   handlerRef.current = handleMessage
 
   function connectWs() {
+    const blocked = liveConfigBlocked()
+    if (blocked) {
+      setErr(blocked.message)
+      return
+    }
     setConn(liveSessionIdRef.current ? 'reconnecting' : 'connecting')
-    const ws = new WebSocket(liveWsUrl())
+    let ws
+    try {
+      ws = new WebSocket(liveWsUrl())
+    } catch (e) {
+      setErr(e.message || 'Live is not configured')
+      return
+    }
     ws.binaryType = 'arraybuffer'
     wsRef.current = ws
     ws.onopen = () => {
@@ -207,9 +270,9 @@ export default function Live({ navigate }) {
       try { handlerRef.current?.(JSON.parse(ev.data)) } catch { /* ignore */ }
     }
     ws.onclose = () => {
-      if (stoppingRef.current) return
+      sessionRef.current?.handleDisconnect()
+      if (!sessionRef.current?.shouldReconnect()) return
       setConn('reconnecting')
-      captureStopRef.current?.()
       reconnectTimer.current = setTimeout(connectWs, 250)
     }
   }
@@ -228,7 +291,7 @@ export default function Live({ navigate }) {
         if (video.requestVideoFrameCallback) video.requestVideoFrameCallback(onFrame)
         else requestAnimationFrame(() => onFrame(performance.now()))
       }
-      if (!gateRef.current.canSendFrames()) {
+      if (!gateRef.current.canSendFrames() || sessionRef.current?.pendingStop) {
         loop()
         return
       }
@@ -254,12 +317,12 @@ export default function Live({ navigate }) {
       const tEnc = performance.now()
       canvas.toBlob((blob) => {
         encodingRef.current = false
-        if (stopped || !blob || !gateRef.current.canSendFrames()) {
+        if (stopped || !blob || !gateRef.current.canSendFrames() || sessionRef.current?.pendingStop) {
           if (!blob) statsRef.current.dropped += 1
           return
         }
         blob.arrayBuffer().then((buf) => {
-          if (stopped || !gateRef.current.canSendFrames()) return
+          if (stopped || !gateRef.current.canSendFrames() || sessionRef.current?.pendingStop) return
           const header = frameHeader({
             liveSessionId: liveSessionIdRef.current,
             frameId: id,
@@ -286,65 +349,11 @@ export default function Live({ navigate }) {
   async function handleStart() {
     setErr(null)
     if (soundsRef.current) await unlockSounds(soundsRef.current)
-    const deadline = Date.now() + 20000
-    while (!liveSessionIdRef.current && Date.now() < deadline) {
-      await new Promise(r => setTimeout(r, 100))
-    }
-    const ws = wsRef.current
-    if (!ws || ws.readyState !== 1 || !liveSessionIdRef.current) {
-      setErr('Waiting for server…')
-      return
-    }
-    gateRef.current.enterCountdown()
-    setPhase('countdown')
-    for (const step of [3, 2, 1, 'GO']) {
-      setCountdown(step)
-      await new Promise(r => setTimeout(r, 700))
-    }
-    frameIdRef.current = 0
-    statsRef.current = { captured: 0, sent: 0, dropped: 0 }
-    goAtRef.current = Date.now()
-    gateRef.current.enterLive()
-    setPhase('live')
-    setCountdown('GO')
-    ws.send(JSON.stringify({ type: 'go' }))
-    startCapture()
-    setTimeout(() => setCountdown(null), 450)
-    const ping = setInterval(() => {
-      if (wsRef.current?.readyState === 1) {
-        pingTRef.current = performance.now()
-        wsRef.current.send(JSON.stringify({ type: 'ping', t: pingTRef.current }))
-        wsRef.current.send(JSON.stringify({
-          type: 'client_stats',
-          frames_captured: statsRef.current.captured,
-          frames_sent: statsRef.current.sent,
-          frames_dropped_client: statsRef.current.dropped,
-        }))
-      }
-    }, CLOCK_RESYNC_MS)
-    captureStopRef.current = ((prev) => () => {
-      clearInterval(ping)
-      prev?.()
-    })(captureStopRef.current)
+    await sessionRef.current.requestStart()
   }
 
   function handleStop() {
-    if (gateRef.current.phase !== 'live') {
-      stoppingRef.current = true
-      captureStopRef.current?.()
-      try { wsRef.current?.close() } catch { /* ignore */ }
-      navigate('upload')
-      return
-    }
-    stoppingRef.current = true
-    gateRef.current.enterStopping()
-    captureStopRef.current?.()
-    setPhase('stopping')
-    try {
-      if (wsRef.current?.readyState === 1) {
-        wsRef.current.send(JSON.stringify({ type: 'stop' }))
-      }
-    } catch { /* ignore */ }
+    sessionRef.current.requestStop()
   }
 
   function handleContinue() {
@@ -419,7 +428,7 @@ export default function Live({ navigate }) {
         </div>
       )}
 
-      {phase === 'preview' && (
+      {phase === 'preview' && !liveConfigBlocked() && (
         <button className="btn btn-primary live-start" type="button" onClick={handleStart}>
           Start Live
         </button>

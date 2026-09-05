@@ -17,26 +17,18 @@ class _Decided:
 
 class DbLivePersist:
     def create_prepare(self, live_session_id: str, user_id: str) -> None:
+        """LIVE-18: prepare is RAM-only — no database row."""
+        return None
+
+    def activate(self, live_session_id: str, user_id: Optional[str] = None) -> None:
         import crud
         from db import SessionLocal
 
         db = SessionLocal()
         try:
-            existing = crud.get_live_session(db, live_session_id)
-            if existing is None:
-                crud.create_live_session(
-                    db, live_session_id=live_session_id, user_id=user_id
-                )
-        finally:
-            db.close()
-
-    def activate(self, live_session_id: str) -> None:
-        import crud
-        from db import SessionLocal
-
-        db = SessionLocal()
-        try:
-            crud.activate_live_session(db, live_session_id)
+            crud.ensure_active_live_session(
+                db, live_session_id=live_session_id, user_id=user_id or ""
+            )
         finally:
             db.close()
 
@@ -94,11 +86,19 @@ class DbLivePersist:
                 }
             result = build_real_result(live_session_id, shot_points, None)
             history_id = None
-            if save_history:
-                session_row = crud.create_session(
-                    db, user_id=user_id, result=result, job_id=None
-                )
-                history_id = session_row.id
+            if not save_history:
+                if existing is not None:
+                    crud.complete_live_session(
+                        db,
+                        live_session_id,
+                        result=result,
+                        history_session_id=None,
+                    )
+                return {"result": result, "history_session_id": None}
+            session_row = crud.create_session(
+                db, user_id=user_id, result=result, job_id=None
+            )
+            history_id = session_row.id
             crud.complete_live_session(
                 db,
                 live_session_id,
@@ -119,16 +119,20 @@ class MemoryLivePersist:
         self.history: list[dict] = []
 
     def create_prepare(self, live_session_id: str, user_id: str) -> None:
-        self.sessions.setdefault(
-            live_session_id,
-            {"user_id": user_id, "status": "prepare", "history_session_id": None},
-        )
+        return None
 
-    def activate(self, live_session_id: str) -> None:
-        row = self.sessions.setdefault(
-            live_session_id, {"user_id": None, "status": "prepare"}
-        )
+    def activate(self, live_session_id: str, user_id: Optional[str] = None) -> None:
+        row = self.sessions.get(live_session_id)
+        if row is None:
+            self.sessions[live_session_id] = {
+                "user_id": user_id,
+                "status": "active",
+                "history_session_id": None,
+            }
+            return
         row["status"] = "active"
+        if user_id:
+            row["user_id"] = user_id
 
     def upsert_shot(
         self,
@@ -161,9 +165,14 @@ class MemoryLivePersist:
     ) -> dict:
         result = build_real_result(live_session_id, shot_points, None)
         history_id = None
-        if save_history:
-            history_id = f"hist-{len(self.history) + 1}"
-            self.history.append({"id": history_id, "result": result, "user_id": user_id})
+        if not save_history:
+            row = self.sessions.get(live_session_id)
+            if row is not None:
+                row["status"] = "completed"
+                row["result"] = result
+            return {"result": result, "history_session_id": None}
+        history_id = f"hist-{len(self.history) + 1}"
+        self.history.append({"id": history_id, "result": result, "user_id": user_id})
         row = self.sessions.setdefault(live_session_id, {"user_id": user_id})
         row["status"] = "completed"
         row["result"] = result

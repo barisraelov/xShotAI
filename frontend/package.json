@@ -7,7 +7,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "test:live": "node --test src/live/live.test.js"
+    "test:live": "node --test src/live/live.test.js src/live/clientSession.test.js src/live/liveConfig.test.js"
   },
   "dependencies": {
     "react": "^18.3.1",
