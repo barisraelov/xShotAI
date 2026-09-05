@@ -6,6 +6,7 @@ import {
   STOP_ACK_TIMEOUT_MS,
   TELEMETRY_MS,
   createLiveClientSession,
+  rttAndOffset,
 } from './clientSession.js'
 
 function createFakeTimers() {
@@ -69,6 +70,8 @@ function harness({ open = true } = {}) {
   const nav = { session: 0, upload: 0, last: null }
   const phases = []
   const errors = []
+  const countdowns = []
+  const conns = []
   const session = createLiveClientSession({
     now: timers.now,
     setTimeout: (...a) => timers.setTimeout(...a),
@@ -81,6 +84,8 @@ function harness({ open = true } = {}) {
     startCapture: () => { capture.start += 1 },
     stopCapture: () => { capture.stop += 1 },
     onPhase: (p) => { phases.push(p) },
+    onCountdown: (v) => { countdowns.push(v) },
+    onConn: (c) => { conns.push(c) },
     onNavigateSession: (msg) => { nav.session += 1; nav.last = msg },
     onNavigateUpload: () => { nav.upload += 1 },
     onError: (msg) => { errors.push(msg) },
@@ -95,6 +100,8 @@ function harness({ open = true } = {}) {
     nav,
     phases,
     errors,
+    countdowns,
+    conns,
     setOpen(v) { socketOpen = v },
   }
 }
@@ -316,3 +323,138 @@ describe('FIX-07 telemetry interval', () => {
     assert.equal(h.timers.activeIntervals(), 0)
   })
 })
+
+describe('PATCH-01 Ping/Pong clock', () => {
+  it('first Ping and matching Pong compute RTT from msg.t', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const ping = h.sent.filter(m => m.type === 'ping').at(-1)
+    assert.equal(typeof ping.t, 'number')
+    assert.equal(ping.t, h.session.pendingPingT)
+    h.timers.advance(12)
+    const out = h.session.handlePong({ t: ping.t, server_t: ping.t + 4 })
+    assert.ok(out)
+    assert.equal(out.rtt_ms, 12)
+    assert.equal(h.session.lastRtt, 12)
+    assert.ok(h.sent.some(m => m.type === 'clock_offset' && m.rtt_ms === 12))
+  })
+
+  it('Ping after 30s uses a new timestamp', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const first = h.sent.filter(m => m.type === 'ping').at(-1).t
+    h.timers.advance(TELEMETRY_MS)
+    const second = h.sent.filter(m => m.type === 'ping').at(-1).t
+    assert.equal(second, first + TELEMETRY_MS)
+    assert.notEqual(second, first)
+  })
+
+  it('repeated Ping cycles do not inflate latency', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const rtts = []
+    for (let i = 0; i < 3; i += 1) {
+      const ping = h.sent.filter(m => m.type === 'ping').at(-1)
+      h.timers.advance(8)
+      const out = h.session.handlePong({ t: ping.t, server_t: ping.t })
+      rtts.push(out.rtt_ms)
+      h.timers.advance(TELEMETRY_MS - 8)
+    }
+    assert.deepEqual(rtts, [8, 8, 8])
+    assert.ok(Math.max(...rtts) < 50)
+  })
+
+  it('reconnect starts a fresh ping timestamp', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const firstId = h.session.pendingPingId
+    const firstT = h.session.pendingPingT
+    h.session.handleDisconnect()
+    assert.equal(h.session.pendingPingT, null)
+    h.session.handlePrepared({ resumed: true })
+    const next = h.sent.filter(m => m.type === 'ping').at(-1)
+    assert.equal(h.session.pendingPingId, next.ping_id)
+    assert.notEqual(next.ping_id, firstId)
+    h.session.handlePong({ t: firstT, ping_id: firstId, server_t: firstT })
+    assert.equal(h.session.lastOffset, null)
+    const out = h.session.handlePong({ t: next.t, ping_id: next.ping_id, server_t: next.t })
+    assert.ok(out)
+  })
+
+  it('stale Pong does not change offset', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const first = h.sent.filter(m => m.type === 'ping').at(-1).t
+    h.session.handlePong({ t: first, server_t: first })
+    const offset = h.session.lastOffset
+    h.timers.advance(TELEMETRY_MS)
+    const ignored = h.session.handlePong({ t: first, server_t: first - 5000 })
+    assert.equal(ignored, null)
+    assert.equal(h.session.lastOffset, offset)
+  })
+
+  it('does not mix epoch milliseconds with monotonic milliseconds', () => {
+    const mono = rttAndOffset({ pingT: 1000, pongAt: 1016, serverT: 1002 })
+    assert.equal(mono.rtt_ms, 16)
+    const mixed = rttAndOffset({ pingT: 1000, pongAt: Date.now(), serverT: 1002 })
+    assert.ok(mixed.rtt_ms > 1e11)
+    const hNow = 5000
+    const ok = rttAndOffset({ pingT: hNow, pongAt: hNow + 9, serverT: hNow })
+    assert.equal(ok.rtt_ms, 9)
+  })
+})
+
+describe('PATCH-02 prepared resumed flag', () => {
+  it('prepared resumed=true restarts capture once', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    assert.equal(h.capture.start, 1)
+    h.session.handleDisconnect()
+    h.session.handlePrepared({ resumed: true })
+    assert.equal(h.capture.start, 2)
+    assert.equal(h.session.goAcked, true)
+    assert.ok(h.conns.includes('live'))
+  })
+
+  it('prepared resumed=false does not recapture before a new GO', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const starts = h.capture.start
+    h.sent.length = 0
+    const countdownMark = h.countdowns.length
+    h.session.handleDisconnect()
+    h.session.handlePrepared({ resumed: false })
+    assert.equal(h.capture.start, starts)
+    assert.equal(h.session.goAcked, false)
+    assert.ok(h.sent.some(m => m.type === 'go'))
+    assert.ok(h.conns.includes('reconnecting'))
+    assert.ok(!h.conns.slice(-1).includes('live'))
+    assert.equal(h.countdowns.slice(countdownMark).includes(3), false)
+    assert.equal(h.countdowns.slice(countdownMark).includes(2), false)
+    assert.equal(h.countdowns.slice(countdownMark).includes(1), false)
+  })
+
+  it('frames stay gated until the new go_ack after resumed=false', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    h.session.handleDisconnect()
+    h.session.handlePrepared({ resumed: false })
+    assert.equal(h.session.goAcked, false)
+    assert.equal(h.session.handleShotDecided(), false)
+    const starts = h.capture.start
+    h.session.handleGoAck()
+    assert.equal(h.session.goAcked, true)
+    assert.equal(h.capture.start, starts + 1)
+    assert.equal(h.session.handleShotDecided(), true)
+    assert.equal(h.session.statsResets, 1)
+  })
+})
+

@@ -261,6 +261,17 @@ async def live_socket(websocket: WebSocket) -> None:
                 started=False,
                 engine_factory=engine_factory,
             )
+            existing_row = persist.get_session(live_session_id) if persist is not None else None
+            if existing_row and existing_row.get("status") == "completed":
+                await _send(websocket, {
+                    "type": "error",
+                    "code": "session_closed",
+                    "message": "live session already completed",
+                    "live_session_id": live_session_id,
+                })
+                return
+            if existing_row and existing_row.get("status") == "active":
+                runtime.restore_decided_shots(persist.load_shots(live_session_id))
             registry[live_session_id] = runtime
             await _send(websocket, {
                 "type": "prepared",
@@ -304,12 +315,15 @@ async def live_socket(websocket: WebSocket) -> None:
             if typ == "prepare":
                 await handle_prepare(msg)
             elif typ == "ping":
-                await _send(websocket, {
+                pong = {
                     "type": "pong",
                     "t": msg.get("t"),
                     "server_t": time.monotonic() * 1000.0,
                     "resync_s": CLOCK_RESYNC_S,
-                })
+                }
+                if msg.get("ping_id") is not None:
+                    pong["ping_id"] = msg.get("ping_id")
+                await _send(websocket, pong)
             elif typ == "clock_offset":
                 if runtime is not None:
                     runtime.set_clock_offset(float(msg.get("offset_ms") or 0))

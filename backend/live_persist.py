@@ -32,6 +32,33 @@ class DbLivePersist:
         finally:
             db.close()
 
+    def get_session(self, live_session_id: str) -> Optional[dict]:
+        import crud
+        from db import SessionLocal
+
+        db = SessionLocal()
+        try:
+            row = crud.get_live_session(db, live_session_id)
+            if row is None:
+                return None
+            return {
+                "user_id": row.user_id,
+                "status": row.status,
+                "history_session_id": row.history_session_id,
+            }
+        finally:
+            db.close()
+
+    def load_shots(self, live_session_id: str) -> list[dict]:
+        import crud
+        from db import SessionLocal
+
+        db = SessionLocal()
+        try:
+            return [row.payload for row in crud.list_live_shots(db, live_session_id)]
+        finally:
+            db.close()
+
     def upsert_shot(
         self,
         *,
@@ -52,6 +79,9 @@ class DbLivePersist:
         )
         db = SessionLocal()
         try:
+            parent = crud.get_live_session(db, live_session_id)
+            if parent is None:
+                return None
             row, _inserted = crud.upsert_live_shot(
                 db,
                 live_session_id=live_session_id,
@@ -117,11 +147,26 @@ class MemoryLivePersist:
         self.sessions: dict[str, dict] = {}
         self.shots: dict[tuple[str, str], dict] = {}
         self.history: list[dict] = []
+        self.fail_activate = False
+        self.activate_calls = 0
 
     def create_prepare(self, live_session_id: str, user_id: str) -> None:
         return None
 
+    def get_session(self, live_session_id: str) -> Optional[dict]:
+        return self.sessions.get(live_session_id)
+
+    def load_shots(self, live_session_id: str) -> list[dict]:
+        return [
+            payload
+            for (sid, _shot_id), payload in sorted(self.shots.items())
+            if sid == live_session_id
+        ]
+
     def activate(self, live_session_id: str, user_id: Optional[str] = None) -> None:
+        self.activate_calls += 1
+        if self.fail_activate:
+            raise RuntimeError("persist failed")
         row = self.sessions.get(live_session_id)
         if row is None:
             self.sessions[live_session_id] = {
@@ -145,6 +190,9 @@ class MemoryLivePersist:
         degraded: bool,
     ) -> dict:
         key = (live_session_id, shot_id)
+        parent = self.sessions.get(live_session_id)
+        if parent is None or parent.get("status") not in ("active", "stopping"):
+            return None
         if key in self.shots:
             return self.shots[key]
         payload = shot_point_from_decided(

@@ -1,22 +1,40 @@
-/** Live API / WebSocket configuration (FIX-05 / LIVE-25). Never default to Production. */
+/** Live API / WebSocket configuration (FIX-05 / PATCH-04 / LIVE-25). Staging-only. */
 
 export const PRODUCTION_API_HOSTS = ['xshotai.up.railway.app']
 
 export const LIVE_CONFIG_MESSAGES = {
   missing_vite_api_url:
     'Live is not configured: missing VITE_API_URL. Preview must point at Staging, never Production.',
+  production_api_blocked:
+    'Live is blocked: the Production API is not allowed. Set VITE_API_URL to an explicit Staging origin.',
   preview_points_at_production:
     'Live is blocked: this Preview build points at the Production API. Use the Staging URL.',
 }
 
+export function isLocalDevHost(host) {
+  const h = String(host || '').toLowerCase()
+  return h === 'localhost' || h === '127.0.0.1' || h === '::1' || h === '[::1]'
+}
+
+export function hostnameOf(url) {
+  if (!url) return ''
+  try {
+    return new URL(url).hostname.toLowerCase()
+  } catch {
+    return ''
+  }
+}
+
 export function isProductionApiUrl(url) {
   if (!url) return false
-  try {
-    const host = new URL(url).hostname.toLowerCase()
-    return PRODUCTION_API_HOSTS.includes(host)
-  } catch {
-    return PRODUCTION_API_HOSTS.some(h => String(url).toLowerCase().includes(h))
-  }
+  const host = hostnameOf(url)
+  if (host && PRODUCTION_API_HOSTS.includes(host)) return true
+  const lower = String(url).toLowerCase()
+  return PRODUCTION_API_HOSTS.some(h => lower.includes(h))
+}
+
+export function isProductionWsUrl(url) {
+  return isProductionApiUrl(url)
 }
 
 export function httpUrlToWs(apiBase) {
@@ -24,6 +42,9 @@ export function httpUrlToWs(apiBase) {
   if (!trimmed) return null
   if (/^https:/i.test(trimmed)) return `${trimmed.replace(/^https:/i, 'wss:')}/live`
   if (/^http:/i.test(trimmed)) return `${trimmed.replace(/^http:/i, 'ws:')}/live`
+  if (/^wss:/i.test(trimmed) || /^ws:/i.test(trimmed)) {
+    return /\/live$/i.test(trimmed) ? trimmed : `${trimmed}/live`
+  }
   return `${trimmed}/live`
 }
 
@@ -45,6 +66,17 @@ export function resolveLiveConfig({
   const preview = isPreviewEnv({ vercelEnv, pageHost, mode })
   const productionLike = mode === 'production' || preview
 
+  if (raw && isProductionApiUrl(raw)) {
+    return {
+      ok: false,
+      blocked: true,
+      reason: 'production_api_blocked',
+      apiBase: raw,
+      wsUrl: null,
+      message: LIVE_CONFIG_MESSAGES.production_api_blocked,
+    }
+  }
+
   if (!raw) {
     if (productionLike) {
       return {
@@ -54,6 +86,16 @@ export function resolveLiveConfig({
         apiBase: '',
         wsUrl: null,
         message: LIVE_CONFIG_MESSAGES.missing_vite_api_url,
+      }
+    }
+    if (pageHost && isProductionApiUrl(`https://${pageHost}`)) {
+      return {
+        ok: false,
+        blocked: true,
+        reason: 'production_api_blocked',
+        apiBase: '',
+        wsUrl: null,
+        message: LIVE_CONFIG_MESSAGES.production_api_blocked,
       }
     }
     return {
@@ -67,14 +109,15 @@ export function resolveLiveConfig({
     }
   }
 
-  if (preview && isProductionApiUrl(raw)) {
+  const wsUrl = httpUrlToWs(raw)
+  if (wsUrl && isProductionWsUrl(wsUrl)) {
     return {
       ok: false,
       blocked: true,
-      reason: 'preview_points_at_production',
+      reason: 'production_api_blocked',
       apiBase: raw,
       wsUrl: null,
-      message: LIVE_CONFIG_MESSAGES.preview_points_at_production,
+      message: LIVE_CONFIG_MESSAGES.production_api_blocked,
     }
   }
 
@@ -83,7 +126,7 @@ export function resolveLiveConfig({
     blocked: false,
     reason: 'configured',
     apiBase: raw.replace(/\/$/, ''),
-    wsUrl: httpUrlToWs(raw),
+    wsUrl,
     usePageHost: false,
     message: null,
   }
@@ -117,5 +160,8 @@ export function getLiveRuntimeConfig() {
 export function livePageWsUrl(location = (typeof window !== 'undefined' ? window.location : null)) {
   const proto = location && location.protocol === 'https:' ? 'wss:' : 'ws:'
   const host = location ? location.host : 'localhost'
+  if (isProductionApiUrl(`${proto}//${host}`)) {
+    throw new Error(LIVE_CONFIG_MESSAGES.production_api_blocked)
+  }
   return `${proto}//${host}/live`
 }

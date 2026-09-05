@@ -1,9 +1,25 @@
-/** Live client session controller (FIX-01 / FIX-02 / FIX-07). Inject timers/IO for tests. */
+/** Live client session controller (FIX-01 / FIX-02 / FIX-07 / PATCH-01 / PATCH-02). Inject timers/IO for tests. */
 
 export const COUNTDOWN_STEP_MS = 700
 export const STOP_ACK_TIMEOUT_MS = 12000
 export const TELEMETRY_MS = 30000
 export const COUNTDOWN_STEPS = [3, 2, 1, 'GO']
+
+export function monotonicNow() {
+  if (typeof performance !== 'undefined' && typeof performance.now === 'function') {
+    return performance.now()
+  }
+  return 0
+}
+
+/** RTT/offset from one monotonic clock. Never mix Date.now() epoch ms into this. */
+export function rttAndOffset({ pingT, pongAt, serverT }) {
+  const rtt = pongAt - pingT
+  return {
+    rtt_ms: rtt,
+    offset_ms: pingT + rtt / 2 - serverT,
+  }
+}
 
 export function createLiveClientSession(deps = {}) {
   const send = deps.send || (() => {})
@@ -23,7 +39,7 @@ export function createLiveClientSession(deps = {}) {
   const enterCountdown = deps.enterCountdown || (() => {})
   const enterStopping = deps.enterStopping || (() => {})
   const resetGate = deps.resetGate || (() => {})
-  const now = deps.now || (() => Date.now())
+  const now = deps.now || monotonicNow
   const sto = deps.setTimeout || setTimeout
   const cto = deps.clearTimeout || clearTimeout
   const siv = deps.setInterval || setInterval
@@ -37,6 +53,7 @@ export function createLiveClientSession(deps = {}) {
   let goAcked = false
   let completed = false
   let disposed = false
+  let reactivateWithoutCountdown = false
   let countdownGen = 0
   let countdownTimer = null
   let stopTimer = null
@@ -45,6 +62,11 @@ export function createLiveClientSession(deps = {}) {
   let captureStarts = 0
   let sent = []
   let phase = 'preview'
+  let pendingPing = null
+  let lastRtt = null
+  let lastOffset = null
+  let statsResets = 0
+  let pingId = 0
 
   function recordSend(obj) {
     sent.push(obj)
@@ -76,14 +98,23 @@ export function createLiveClientSession(deps = {}) {
     }
   }
 
+  function sendPing() {
+    if (!isOpen() || pendingStop || completed || disposed) return null
+    pingId += 1
+    const t = now()
+    pendingPing = { t, ping_id: pingId }
+    recordSend({ type: 'ping', t, ping_id: pingId })
+    return pendingPing
+  }
+
   function startTelemetry() {
     stopTelemetry()
     if (pendingStop || completed || disposed) return
     telemetryStarts += 1
+    sendPing()
     telemetryTimer = siv(() => {
       if (!isOpen() || pendingStop || completed || disposed) return
-      const t = now()
-      recordSend({ type: 'ping', t })
+      sendPing()
       const stats = getStats()
       recordSend({
         type: 'client_stats',
@@ -98,6 +129,7 @@ export function createLiveClientSession(deps = {}) {
     invalidateCountdown()
     stopCapture()
     stopTelemetry()
+    pendingPing = null
   }
 
   function ensureStopTimeout() {
@@ -135,8 +167,21 @@ export function createLiveClientSession(deps = {}) {
     recordSend({ type: 'go' })
   }
 
+  function requestGoHandshake() {
+    if (pendingStop || completed || disposed) return
+    if (goAcked) return
+    if (!isOpen()) {
+      onError('Connection lost — cannot activate Live.')
+      onConn('reconnecting')
+      return
+    }
+    goSent = true
+    recordSend({ type: 'go' })
+  }
+
   function startCountdown() {
     if (pendingStop || !startRequested || completed || disposed) return
+    if (reactivateWithoutCountdown) return
     invalidateCountdown()
     const gen = countdownGen
     enterCountdown()
@@ -144,6 +189,7 @@ export function createLiveClientSession(deps = {}) {
     let i = 0
     const step = () => {
       if (gen !== countdownGen || pendingStop || completed || disposed) return
+      if (reactivateWithoutCountdown) return
       if (i >= COUNTDOWN_STEPS.length) {
         sendGo(gen)
         return
@@ -162,6 +208,11 @@ export function createLiveClientSession(deps = {}) {
     startCapture()
   }
 
+  function wrappedResetStats() {
+    statsResets += 1
+    resetStats()
+  }
+
   return {
     get pendingStop() { return pendingStop },
     get startRequested() { return startRequested },
@@ -174,10 +225,34 @@ export function createLiveClientSession(deps = {}) {
     get hasTelemetryInterval() { return telemetryTimer != null },
     get sent() { return sent },
     get completed() { return completed },
+    get pendingPingT() { return pendingPing ? pendingPing.t : null },
+    get pendingPingId() { return pendingPing ? pendingPing.ping_id : null },
+    get lastRtt() { return lastRtt },
+    get lastOffset() { return lastOffset },
+    get statsResets() { return statsResets },
+    get reactivateWithoutCountdown() { return reactivateWithoutCountdown },
 
     shouldReconnect() {
       if (disposed || completed) return false
       return true
+    },
+
+    sendPing,
+
+    handlePong(msg) {
+      if (!pendingPing || !msg) return null
+      if (msg.ping_id != null && msg.ping_id !== pendingPing.ping_id) return null
+      if (msg.ping_id == null && msg.t !== pendingPing.t) return null
+      const serverT = msg.server_t
+      if (typeof serverT !== 'number') return null
+      const pingT = pendingPing.t
+      const pongAt = now()
+      const out = rttAndOffset({ pingT, pongAt, serverT })
+      lastRtt = out.rtt_ms
+      lastOffset = out.offset_ms
+      pendingPing = null
+      recordSend({ type: 'clock_offset', offset_ms: out.offset_ms, rtt_ms: out.rtt_ms })
+      return out
     },
 
     async requestStart() {
@@ -212,6 +287,7 @@ export function createLiveClientSession(deps = {}) {
       stopTelemetry()
       stopCapture()
       invalidateCountdown()
+      pendingPing = null
       if (goSent && !goAcked) goSent = false
       if (!pendingStop && !completed && !disposed) {
         onConn('reconnecting')
@@ -220,6 +296,7 @@ export function createLiveClientSession(deps = {}) {
 
     handlePrepared(msg) {
       prepared = true
+      const resumed = !!(msg && msg.resumed === true)
       if (pendingStop) {
         enterStopping()
         setPhase('stopping')
@@ -227,17 +304,34 @@ export function createLiveClientSession(deps = {}) {
         ensureStopTimeout()
         return
       }
-      if (goAcked) {
-        onConn('live')
-        setPhase('live')
-        startTelemetry()
-        beginCapture()
+      if (resumed) {
+        if (goAcked) {
+          onConn('live')
+          setPhase('live')
+          startTelemetry()
+          stopCapture()
+          beginCapture()
+          return
+        }
+        onConn('prepared')
+        if (startRequested) startCountdown()
+        return
+      }
+      if (goAcked || reactivateWithoutCountdown || goSent) {
+        stopCapture()
+        stopTelemetry()
+        goAcked = false
+        goSent = false
+        reactivateWithoutCountdown = true
+        resetGate()
+        onConn('reconnecting')
+        setPhase('countdown')
+        onCountdown(null)
+        requestGoHandshake()
         return
       }
       onConn('prepared')
-      if (startRequested) {
-        startCountdown()
-      }
+      if (startRequested) startCountdown()
     },
 
     handleGoAck() {
@@ -250,10 +344,12 @@ export function createLiveClientSession(deps = {}) {
         startTelemetry()
         return
       }
+      const skipHudReset = reactivateWithoutCountdown
       goAcked = true
       goSent = true
+      reactivateWithoutCountdown = false
       resetFrameId()
-      resetStats()
+      if (!skipHudReset) wrappedResetStats()
       enterLive()
       setPhase('live')
       onConn('live')
@@ -261,6 +357,16 @@ export function createLiveClientSession(deps = {}) {
       sto(() => onCountdown(null), 450)
       beginCapture()
       startTelemetry()
+    },
+
+    handleGoError(msg) {
+      goSent = false
+      goAcked = false
+      stopCapture()
+      resetGate()
+      onConn('reconnecting')
+      setPhase('countdown')
+      onError((msg && msg.message) || 'Could not start the live session.')
     },
 
     handleSessionComplete(msg) {

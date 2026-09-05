@@ -13,7 +13,7 @@ from live_constants import (
     PROTOCOL_VERSION,
 )
 from live_persist import MemoryLivePersist
-from live_runtime import STATUS_COMPLETED, LiveRuntime
+from live_runtime import STATUS_ACTIVE, STATUS_COMPLETED, STATUS_PREPARE, LiveRuntime
 from shot_session_engine import ShotDecided
 
 
@@ -649,6 +649,101 @@ class LiveRuntimeFixTests(unittest.TestCase):
         self.assertFalse(rt.engine.has_open_shot())
         self.assertEqual(rt.engine.start_kwargs["frame_width"], 720)
         self.assertNotIn("s002", rt.decided_shots)
+
+
+class LiveRuntimePatchTests(unittest.TestCase):
+    def test_go_persist_success_emits_go_ack(self) -> None:
+        outbound: list[dict] = []
+        persist = MemoryLivePersist()
+        rt = LiveRuntime(
+            "live-1", "user-1", RecordingEngine(),
+            persist=persist, on_outbound=outbound.append,
+        )
+        self.assertTrue(rt.go())
+        self.assertEqual(rt.status, STATUS_ACTIVE)
+        self.assertTrue(rt.go_started)
+        self.assertEqual(persist.sessions["live-1"]["status"], "active")
+        self.assertTrue(any(m.get("type") == "go_ack" for m in outbound))
+        self.assertFalse(any(m.get("type") == "go_error" for m in outbound))
+
+    def test_go_persist_failure_stays_prepare(self) -> None:
+        outbound: list[dict] = []
+        persist = MemoryLivePersist()
+        persist.fail_activate = True
+        rt = LiveRuntime(
+            "live-1", "user-1", RecordingEngine(),
+            persist=persist, on_outbound=outbound.append,
+        )
+        self.assertFalse(rt.go())
+        self.assertEqual(rt.status, STATUS_PREPARE)
+        self.assertFalse(rt.go_started)
+        self.assertEqual(persist.sessions, {})
+        self.assertTrue(any(m.get("type") == "go_error" for m in outbound))
+        self.assertFalse(any(m.get("type") == "go_ack" for m in outbound))
+
+    def test_go_retries_after_persist_failure(self) -> None:
+        outbound: list[dict] = []
+        persist = MemoryLivePersist()
+        persist.fail_activate = True
+        rt = LiveRuntime(
+            "live-1", "user-1", RecordingEngine(),
+            persist=persist, on_outbound=outbound.append,
+        )
+        self.assertFalse(rt.go())
+        persist.fail_activate = False
+        outbound.clear()
+        self.assertTrue(rt.go())
+        self.assertEqual(rt.status, STATUS_ACTIVE)
+        self.assertEqual(len(persist.sessions), 1)
+        self.assertTrue(any(m.get("type") == "go_ack" for m in outbound))
+
+    def test_duplicate_go_after_success_one_row(self) -> None:
+        persist = MemoryLivePersist()
+        rt = _runtime(persist=persist)
+        self.assertTrue(rt.go())
+        self.assertTrue(rt.go())
+        self.assertEqual(len(persist.sessions), 1)
+        self.assertEqual(persist.activate_calls, 1)
+
+    def test_parallel_go_does_not_duplicate_row(self) -> None:
+        persist = MemoryLivePersist()
+        rt = _runtime(persist=persist)
+        threads = [threading.Thread(target=rt.go) for _ in range(2)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=5)
+        self.assertEqual(len(persist.sessions), 1)
+        self.assertEqual(persist.activate_calls, 1)
+        self.assertTrue(rt.go_started)
+
+    def test_shot_not_saved_without_parent_session(self) -> None:
+        persist = MemoryLivePersist()
+        shot = ShotDecided(shot_id="s001", result="made", decision_frame=0)
+        engine = RecordingEngine(decide_on={0: shot})
+        rt = _runtime(engine=engine, persist=persist)
+        rt.status = STATUS_ACTIVE
+        rt.accept_frame(_header(rt.live_session_id, 0), b"")
+        rt.process_one()
+        self.assertEqual(persist.shots, {})
+        self.assertNotIn("s001", rt.decided_shots)
+        self.assertEqual(persist.sessions, {})
+
+    def test_restore_keeps_completed_shots_on_new_runtime(self) -> None:
+        persist = MemoryLivePersist()
+        shot = ShotDecided(shot_id="s001", result="made", decision_frame=0)
+        engine = RecordingEngine(decide_on={0: shot})
+        rt = _runtime(engine=engine, persist=persist)
+        rt.go()
+        rt.accept_frame(_header(rt.live_session_id, 0), b"")
+        rt.process_one()
+        self.assertIn("s001", rt.decided_shots)
+        saved = persist.load_shots(rt.live_session_id)
+        fresh = _runtime(persist=persist, sid=rt.live_session_id)
+        fresh.restore_decided_shots(saved)
+        self.assertIn("s001", fresh.decided_shots)
+        self.assertEqual(persist.load_shots(rt.live_session_id)[0]["shot_id"], "s001")
+        self.assertFalse(fresh.engine.has_open_shot())
 
 
 if __name__ == "__main__":

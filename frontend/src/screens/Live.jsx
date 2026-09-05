@@ -41,7 +41,6 @@ export default function Live({ navigate }) {
   const encodingRef = useRef(false)
   const captureStopRef = useRef(null)
   const liveSessionIdRef = useRef(null)
-  const pingTRef = useRef(null)
   const goAtRef = useRef(null)
   const statsRef = useRef({ captured: 0, sent: 0, dropped: 0 })
   const reconnectTimer = useRef(null)
@@ -193,15 +192,11 @@ export default function Live({ navigate }) {
       playedRef.current = createPlayedSet(msg.live_session_id, window.sessionStorage)
       session.handlePrepared(msg)
     } else if (msg.type === 'pong') {
-      const t0 = pingTRef.current
-      if (t0 != null && wsRef.current?.readyState === 1) {
-        const now = performance.now()
-        const rtt = now - t0
-        const offset = t0 + rtt / 2 - msg.server_t
-        wsRef.current.send(JSON.stringify({ type: 'clock_offset', offset_ms: offset, rtt_ms: rtt }))
-      }
+      session.handlePong(msg)
     } else if (msg.type === 'go_ack') {
       session.handleGoAck()
+    } else if (msg.type === 'go_error') {
+      session.handleGoError(msg)
     } else if (msg.type === 'shot_decided') {
       if (!session.handleShotDecided()) return
       const played = playedRef.current || createPlayedSet(liveSessionIdRef.current, window.sessionStorage)
@@ -262,8 +257,7 @@ export default function Live({ navigate }) {
       const prepare = { type: 'prepare' }
       if (liveSessionIdRef.current) prepare.live_session_id = liveSessionIdRef.current
       ws.send(JSON.stringify(prepare))
-      pingTRef.current = performance.now()
-      ws.send(JSON.stringify({ type: 'ping', t: pingTRef.current }))
+      sessionRef.current?.sendPing()
     }
     ws.onmessage = (ev) => {
       if (typeof ev.data !== 'string') return

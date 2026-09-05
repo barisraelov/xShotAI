@@ -122,6 +122,7 @@ class LiveRuntime:
         self.engine_started = started
         self.frame_width: Optional[int] = None
         self.frame_height: Optional[int] = None
+        self._go_lock = threading.Lock()
 
     # ── outbound ────────────────────────────────────────────────────────────
 
@@ -340,31 +341,56 @@ class LiveRuntime:
                 self.engine._next_shot_index = next_idx
         self.engine_started = True
 
-    def go(self, now: Optional[float] = None) -> None:
+    def go(self, now: Optional[float] = None) -> bool:
         now = self.clock() if now is None else now
-        if self.go_started:
+        with self._go_lock:
+            if self.go_started:
+                self._emit({"type": "go_ack", "live_session_id": self.live_session_id})
+                return True
+            if self.status in (STATUS_STOPPING, STATUS_COMPLETED):
+                self._emit({
+                    "type": "go_error",
+                    "code": "session_closed",
+                    "message": "live session is not awaiting GO",
+                    "live_session_id": self.live_session_id,
+                })
+                return False
+            if self.persist is not None:
+                try:
+                    self.persist.activate(self.live_session_id, user_id=self.user_id)
+                except Exception as exc:
+                    live_log(
+                        "LIVE-18",
+                        "go_persist_failed",
+                        live_session_id=self.live_session_id,
+                        error=str(exc),
+                    )
+                    self._emit({
+                        "type": "go_error",
+                        "code": "persist_failed",
+                        "message": "Could not create the live session. Try Start again.",
+                        "live_session_id": self.live_session_id,
+                    })
+                    return False
+            self.status = STATUS_ACTIVE
+            self.go_started = True
+            self.queue.clear()
+            self.metadata.clear()
+            self.max_seen_id = -1
+            self.frames_received = 0
+            self.frames_processed = 0
+            self.frames_dropped_server = 0
+            self.duplicate_stale_frames = 0
+            self.max_queue_size = 0
+            self.gap_count = 0
+            self._drop_times.clear()
+            self.degraded = False
+            self.degraded_since = None
+            self._last_e2e_ms = None
+            self._latency_high_since = None
+            live_log("LIVE-18", "go", live_session_id=self.live_session_id, user_id=self.user_id)
             self._emit({"type": "go_ack", "live_session_id": self.live_session_id})
-            return
-        self.status = STATUS_ACTIVE
-        self.go_started = True
-        self.queue.clear()
-        self.metadata.clear()
-        self.max_seen_id = -1
-        self.frames_received = 0
-        self.frames_processed = 0
-        self.frames_dropped_server = 0
-        self.duplicate_stale_frames = 0
-        self.max_queue_size = 0
-        self.gap_count = 0
-        self._drop_times.clear()
-        self.degraded = False
-        self.degraded_since = None
-        self._last_e2e_ms = None
-        self._latency_high_since = None
-        if self.persist is not None:
-            self.persist.activate(self.live_session_id, user_id=self.user_id)
-        live_log("LIVE-18", "go", live_session_id=self.live_session_id, user_id=self.user_id)
-        self._emit({"type": "go_ack", "live_session_id": self.live_session_id})
+            return True
 
     def stop(self, now: Optional[float] = None) -> int:
         now = self.clock() if now is None else now
@@ -822,6 +848,14 @@ class LiveRuntime:
                 engine=src,
                 degraded=self.degraded,
             )
+            if payload is None:
+                live_log(
+                    "LIVE-18",
+                    "shot_without_parent",
+                    live_session_id=self.live_session_id,
+                    shot_id=shot_id,
+                )
+                return None
         if payload is None:
             payload = _shot_point_from_engine(src, shot, self.degraded)
         self.decided_shots[shot_id] = payload
@@ -841,6 +875,14 @@ class LiveRuntime:
 
     def replay_unacked(self) -> list[dict]:
         return list(self.unacked.values())
+
+    def restore_decided_shots(self, shots: list[dict]) -> None:
+        """Keep already-persisted shots when a new RAM runtime replaces a lost one."""
+        for payload in shots or []:
+            shot_id = payload.get("shot_id")
+            if not shot_id:
+                continue
+            self.decided_shots[shot_id] = payload
 
 
 def _shot_point_from_engine(engine: Any, shot: Any, degraded: bool) -> dict:
