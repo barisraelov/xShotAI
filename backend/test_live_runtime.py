@@ -44,6 +44,13 @@ class RecordingEngine:
 
     def start(self, **kwargs) -> None:
         self.start_kwargs = kwargs
+        self._next_shot_index = 1
+
+    def next_shot_index(self) -> int:
+        return int(self._next_shot_index)
+
+    def seed_next_shot_index(self, next_index: int) -> None:
+        self._next_shot_index = max(1, int(next_index))
 
     def process_frame(self, frame, frame_id: int):
         with self._gate:
@@ -54,9 +61,23 @@ class RecordingEngine:
                 self.in_process.set()
                 self.release.wait(timeout=5)
             self.frames.append(frame_id)
-            shot = self.decide_on.get(frame_id)
-            if shot is None:
+            spec = self.decide_on.get(frame_id)
+            if spec is None:
                 return []
+            if spec.shot_id == "auto":
+                shot = ShotDecided(
+                    shot_id=f"s{self._next_shot_index:03d}",
+                    result=spec.result,
+                    decision_frame=spec.decision_frame,
+                )
+                self._next_shot_index += 1
+            else:
+                shot = spec
+                from live_runtime import shot_index_from_id
+
+                n = shot_index_from_id(spec.shot_id)
+                if n is not None and n >= self._next_shot_index:
+                    self._next_shot_index = n + 1
             self.shot_events.append({
                 "shot_id": shot.shot_id,
                 "result": shot.result,
@@ -744,6 +765,106 @@ class LiveRuntimePatchTests(unittest.TestCase):
         self.assertIn("s001", fresh.decided_shots)
         self.assertEqual(persist.load_shots(rt.live_session_id)[0]["shot_id"], "s001")
         self.assertFalse(fresh.engine.has_open_shot())
+        self.assertEqual(fresh._seed_shot_index, 2)
+
+    def test_restore_empty_next_shot_is_s001(self) -> None:
+        engine = RecordingEngine(decide_on={0: ShotDecided("auto", "made", 0)})
+        persist = MemoryLivePersist()
+        rt = _runtime(engine=engine, persist=persist)
+        rt.restore_decided_shots([])
+        self.assertEqual(engine.next_shot_index(), 1)
+        rt.go()
+        jpeg = jpeg_of(16, 16)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertEqual(list(rt.decided_shots), ["s001"])
+        self.assertEqual(engine.next_shot_index(), 2)
+
+    def test_restore_s001_s002_next_shot_is_s003(self) -> None:
+        engine = RecordingEngine(decide_on={0: ShotDecided("auto", "missed", 0)})
+        persist = MemoryLivePersist()
+        rt = _runtime(engine=engine, persist=persist)
+        rt.restore_decided_shots([
+            {"shot_id": "s001", "result": "made"},
+            {"shot_id": "s002", "result": "missed"},
+        ])
+        self.assertEqual(rt.decided_shots["s001"]["result"], "made")
+        self.assertEqual(rt.decided_shots["s002"]["result"], "missed")
+        self.assertEqual(engine.next_shot_index(), 3)
+        rt.go()
+        jpeg = jpeg_of(16, 16)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertIn("s003", rt.decided_shots)
+        self.assertEqual(rt.decided_shots["s001"]["result"], "made")
+        self.assertEqual(rt.decided_shots["s002"]["result"], "missed")
+        self.assertEqual(engine.next_shot_index(), 4)
+
+    def test_restore_gap_s001_s004_next_shot_is_s005(self) -> None:
+        engine = RecordingEngine(decide_on={0: ShotDecided("auto", "made", 0)})
+        persist = MemoryLivePersist()
+        rt = _runtime(engine=engine, persist=persist)
+        rt.restore_decided_shots([
+            {"shot_id": "s001", "result": "made"},
+            {"shot_id": "s004", "result": "missed"},
+        ])
+        self.assertEqual(engine.next_shot_index(), 5)
+        rt.go()
+        jpeg = jpeg_of(16, 16)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertIn("s005", rt.decided_shots)
+        self.assertEqual(rt.decided_shots["s004"]["result"], "missed")
+        self.assertNotIn("s002", rt.decided_shots)
+
+    def test_reconnect_does_not_reset_shot_index(self) -> None:
+        clock = FakeClock(0.0)
+        engine = RecordingEngine(decide_on={
+            0: ShotDecided("auto", "made", 0),
+            1: ShotDecided("auto", "missed", 1),
+            2: ShotDecided("auto", "made", 2),
+        })
+        persist = MemoryLivePersist()
+        rt = _runtime(engine=engine, persist=persist, clock=clock)
+        rt.go()
+        jpeg = jpeg_of(16, 16)
+        for i in (0, 1):
+            rt.accept_frame(_header(rt.live_session_id, i, width=16, height=16), jpeg)
+            rt.process_one()
+        self.assertEqual(sorted(rt.decided_shots), ["s001", "s002"])
+        rt.on_disconnect()
+        clock.t = 0.4
+        rt.on_reconnect("user-1")
+        rt.accept_frame(_header(rt.live_session_id, 2, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertEqual(sorted(rt.decided_shots), ["s001", "s002", "s003"])
+
+    def test_shot_id_collision_does_not_return_old_result(self) -> None:
+        outbound: list[dict] = []
+        persist = MemoryLivePersist()
+        engine = RecordingEngine(decide_on={
+            0: ShotDecided("s001", "made", 0),
+            1: ShotDecided("s001", "missed", 1),
+        })
+        rt = LiveRuntime(
+            "live-1",
+            "user-1",
+            engine,
+            persist=persist,
+            on_outbound=outbound.append,
+        )
+        rt.go()
+        jpeg = jpeg_of(16, 16)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertEqual(rt.decided_shots["s001"]["result"], "made")
+        outbound.clear()
+        rt.accept_frame(_header(rt.live_session_id, 1, width=16, height=16), jpeg)
+        outcome = rt.process_one()
+        self.assertEqual(rt.decided_shots["s001"]["result"], "made")
+        self.assertFalse(any(m.get("result") == "missed" for m in outbound))
+        self.assertEqual(outcome.decided, [])
+        self.assertEqual(persist.shots[("live-1", "s001")]["result"], "made")
 
 
 if __name__ == "__main__":

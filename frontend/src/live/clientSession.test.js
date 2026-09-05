@@ -458,3 +458,73 @@ describe('PATCH-02 prepared resumed flag', () => {
   })
 })
 
+describe('FINAL-02 go_error retry', () => {
+  it('go_error on first start shows a retryable phase, not stuck countdown', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoError({ message: 'Could not create the live session. Try Start again.' })
+    assert.equal(h.session.phase, 'go_error')
+    assert.notEqual(h.session.phase, 'countdown')
+    assert.equal(h.session.goAcked, false)
+    assert.equal(h.session.reactivateWithoutCountdown, false)
+    assert.ok(h.errors.some(e => e && String(e).includes('Try Start again')))
+    assert.notEqual(h.conns.at(-1), 'live')
+  })
+
+  it('retry after first-start go_error sends a new GO and waits for go_ack', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoError({ message: 'fail' })
+    h.sent.length = 0
+    h.session.retryStart()
+    h.timers.advance(COUNTDOWN_STEP_MS * 4)
+    assert.deepEqual(h.sent.filter(m => m.type === 'go').map(m => m.type), ['go'])
+    assert.equal(h.capture.start, 0)
+    h.session.handleGoAck()
+    assert.equal(h.capture.start, 1)
+    assert.equal(h.session.phase, 'live')
+  })
+
+  it('go_error during reactivation clears reactivateWithoutCountdown', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    h.session.handleDisconnect()
+    h.session.handlePrepared({ resumed: false })
+    assert.equal(h.session.reactivateWithoutCountdown, true)
+    h.session.handleGoError({ message: 'fail' })
+    assert.equal(h.session.phase, 'go_error')
+    assert.equal(h.session.reactivateWithoutCountdown, false)
+    assert.equal(h.session.retryFromReactivate, true)
+  })
+
+  it('retry after reactivation sends one GO and no extra countdown', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    h.session.handleDisconnect()
+    h.session.handlePrepared({ resumed: false })
+    h.session.handleGoError({ message: 'fail' })
+    const threes = h.countdowns.filter(v => v === 3).length
+    h.sent.length = 0
+    h.session.retryStart()
+    h.session.retryStart()
+    assert.deepEqual(h.sent.filter(m => m.type === 'go').map(m => m.type), ['go'])
+    assert.equal(h.countdowns.filter(v => v === 3).length, threes)
+    assert.equal(h.capture.start, 1)
+    h.session.handleGoAck()
+    assert.equal(h.capture.start, 2)
+  })
+
+  it('Stop works from the go_error state', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoError({ message: 'fail' })
+    h.sent.length = 0
+    h.session.requestStop()
+    assert.equal(h.session.phase, 'stopping')
+    assert.deepEqual(h.sent.map(m => m.type), ['stop'])
+  })
+})
+
+

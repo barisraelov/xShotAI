@@ -105,6 +105,7 @@ describe('LIVE-19 / LIVE-22 Stop and warning copy', () => {
     assert.match(session, /type: 'stop'/)
     assert.match(session, /enterStopping/)
     assert.match(jsx, /Start Live/)
+    assert.match(jsx, /Try Start Again/)
     assert.match(jsx, /unlockSounds/)
     assert.match(jsx, /facingMode: \{ ideal: 'environment' \}/)
     assert.match(jsx, /image\/jpeg', JPEG_QUALITY/)

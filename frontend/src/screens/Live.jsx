@@ -28,6 +28,7 @@ function connLabel(state) {
   if (state === 'connecting' || state === 'preview') return 'Connecting'
   if (state === 'reconnecting') return 'Reconnecting'
   if (state === 'stopping') return 'Stopping'
+  if (state === 'go_error') return 'Offline'
   return 'Offline'
 }
 
@@ -346,6 +347,11 @@ export default function Live({ navigate }) {
     await sessionRef.current.requestStart()
   }
 
+  async function handleRetry() {
+    if (soundsRef.current) await unlockSounds(soundsRef.current)
+    sessionRef.current.retryStart()
+  }
+
   function handleStop() {
     sessionRef.current.requestStop()
   }
@@ -425,6 +431,12 @@ export default function Live({ navigate }) {
       {phase === 'preview' && !liveConfigBlocked() && (
         <button className="btn btn-primary live-start" type="button" onClick={handleStart}>
           Start Live
+        </button>
+      )}
+
+      {phase === 'go_error' && !liveConfigBlocked() && (
+        <button className="btn btn-primary live-start" type="button" onClick={handleRetry}>
+          Try Start Again
         </button>
       )}
 

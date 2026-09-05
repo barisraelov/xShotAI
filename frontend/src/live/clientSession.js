@@ -54,6 +54,7 @@ export function createLiveClientSession(deps = {}) {
   let completed = false
   let disposed = false
   let reactivateWithoutCountdown = false
+  let retryFromReactivate = false
   let countdownGen = 0
   let countdownTimer = null
   let stopTimer = null
@@ -169,7 +170,7 @@ export function createLiveClientSession(deps = {}) {
 
   function requestGoHandshake() {
     if (pendingStop || completed || disposed) return
-    if (goAcked) return
+    if (goAcked || goSent) return
     if (!isOpen()) {
       onError('Connection lost — cannot activate Live.')
       onConn('reconnecting')
@@ -231,6 +232,7 @@ export function createLiveClientSession(deps = {}) {
     get lastOffset() { return lastOffset },
     get statsResets() { return statsResets },
     get reactivateWithoutCountdown() { return reactivateWithoutCountdown },
+    get retryFromReactivate() { return retryFromReactivate },
 
     shouldReconnect() {
       if (disposed || completed) return false
@@ -348,6 +350,7 @@ export function createLiveClientSession(deps = {}) {
       goAcked = true
       goSent = true
       reactivateWithoutCountdown = false
+      retryFromReactivate = false
       resetFrameId()
       if (!skipHudReset) wrappedResetStats()
       enterLive()
@@ -360,13 +363,39 @@ export function createLiveClientSession(deps = {}) {
     },
 
     handleGoError(msg) {
+      const wasReactivate = reactivateWithoutCountdown
       goSent = false
       goAcked = false
+      reactivateWithoutCountdown = false
+      retryFromReactivate = wasReactivate
+      startRequested = true
+      invalidateCountdown()
       stopCapture()
+      stopTelemetry()
+      pendingPing = null
       resetGate()
-      onConn('reconnecting')
-      setPhase('countdown')
-      onError((msg && msg.message) || 'Could not start the live session.')
+      onConn('prepared')
+      setPhase('go_error')
+      onCountdown(null)
+      onError((msg && msg.message) || 'Could not start the live session. Try Start again.')
+    },
+
+    retryStart() {
+      if (pendingStop || completed || disposed) return
+      if (phase !== 'go_error' && phase !== 'preview') return
+      onError(null)
+      if (!isOpen() || !prepared) {
+        onError('Waiting for server…')
+        setPhase('go_error')
+        return
+      }
+      if (retryFromReactivate) {
+        reactivateWithoutCountdown = true
+        requestGoHandshake()
+        return
+      }
+      startRequested = true
+      startCountdown()
     },
 
     handleSessionComplete(msg) {

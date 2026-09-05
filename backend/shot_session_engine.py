@@ -438,6 +438,17 @@ class ShotSessionEngine:
         self.abort_open_shot()
         self.ball_pos = []
 
+    def next_shot_index(self) -> int:
+        """1-based index that will be used for the next `sNNN` shot_id."""
+        return int(getattr(self, "_next_shot_index", 1) or 1)
+
+    def seed_next_shot_index(self, next_index: int) -> None:
+        """Continue the sNNN sequence after restored shots. Does not change scoring."""
+        n = int(next_index)
+        if n < 1:
+            n = 1
+        self._next_shot_index = n
+
     def finalize(self) -> tuple[list[dict], dict]:
         diag = {
             "hoop_raw_count": self.hoop_raw_count,

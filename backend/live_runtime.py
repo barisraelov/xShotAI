@@ -33,6 +33,23 @@ STATUS_STOPPING = "stopping"
 STATUS_COMPLETED = "completed"
 
 
+def shot_index_from_id(shot_id: Any) -> Optional[int]:
+    if not isinstance(shot_id, str) or len(shot_id) < 2:
+        return None
+    if shot_id[0] not in ("s", "S") or not shot_id[1:].isdigit():
+        return None
+    return int(shot_id[1:])
+
+
+def next_shot_index_after(shot_ids: Any) -> int:
+    highest = 0
+    for shot_id in shot_ids or []:
+        n = shot_index_from_id(shot_id)
+        if n is not None:
+            highest = max(highest, n)
+    return highest + 1
+
+
 def _mode_name(engine: Any) -> Optional[str]:
     mode = getattr(engine, "global_mode", None)
     if mode is None:
@@ -123,6 +140,7 @@ class LiveRuntime:
         self.frame_width: Optional[int] = None
         self.frame_height: Optional[int] = None
         self._go_lock = threading.Lock()
+        self._seed_shot_index = 1
 
     # ── outbound ────────────────────────────────────────────────────────────
 
@@ -318,11 +336,9 @@ class LiveRuntime:
             raise ValueError("frame_width must be positive")
         if self.engine_started:
             return
-        next_idx = getattr(self.engine, "_next_shot_index", 1) if self.engine else 1
         if self.engine is None and self.engine_factory is not None:
             self.engine = self.engine_factory(int(frame_width))
-            if hasattr(self.engine, "_next_shot_index"):
-                self.engine._next_shot_index = next_idx
+            self._apply_shot_index_seed()
             self.engine_started = True
             return
         start = getattr(self.engine, "start", None) if self.engine is not None else None
@@ -337,9 +353,20 @@ class LiveRuntime:
             )
         elif self.engine_factory is not None:
             self.engine = self.engine_factory(int(frame_width))
-            if hasattr(self.engine, "_next_shot_index"):
-                self.engine._next_shot_index = next_idx
+        self._apply_shot_index_seed()
         self.engine_started = True
+
+    def _apply_shot_index_seed(self) -> None:
+        next_idx = max(
+            int(self._seed_shot_index or 1),
+            next_shot_index_after(self.decided_shots),
+        )
+        self._seed_shot_index = next_idx
+        if self.engine is None:
+            return
+        seed = getattr(self.engine, "seed_next_shot_index", None)
+        if callable(seed):
+            seed(next_idx)
 
     def go(self, now: Optional[float] = None) -> bool:
         now = self.clock() if now is None else now
@@ -635,14 +662,17 @@ class LiveRuntime:
         return frame
 
     def _next_shot_index(self) -> int:
-        if self.engine is None:
-            return 1 + len(self.decided_shots)
-        return getattr(self.engine, "_next_shot_index", 1 + len(self.decided_shots))
+        if self.engine is not None:
+            peek = getattr(self.engine, "next_shot_index", None)
+            if callable(peek):
+                return max(int(peek()), next_shot_index_after(self.decided_shots))
+        return max(self._seed_shot_index, next_shot_index_after(self.decided_shots))
 
     def _replace_or_reset_engine(self, *, reason: str, frame_width: Optional[int] = None) -> Any:
         """Abandon the current engine instance (or reset it) for a new generation."""
         width = frame_width or self.frame_width
         next_idx = self._next_shot_index()
+        self._seed_shot_index = max(self._seed_shot_index, next_idx)
         live_log(
             "LIVE-17",
             "engine_reset",
@@ -653,9 +683,8 @@ class LiveRuntime:
         )
         if self.engine_factory is not None and width:
             self.engine = self.engine_factory(int(width))
-            if hasattr(self.engine, "_next_shot_index"):
-                self.engine._next_shot_index = next_idx
             self.engine_started = True
+            self._apply_shot_index_seed()
             return self.engine
         if self.engine is not None:
             reset = getattr(self.engine, "reset_open_tracking", None)
@@ -665,6 +694,7 @@ class LiveRuntime:
                 abort = getattr(self.engine, "abort_open_shot", None)
                 if abort is not None:
                     abort()
+            self._apply_shot_index_seed()
         return self.engine
 
     def _engine_for_decoded_frame(self, frame_bgr: Any, header: dict) -> tuple[Any, bool]:
@@ -829,13 +859,25 @@ class LiveRuntime:
         if not shot_id or result not in ("made", "missed"):
             return None
         if shot_id in self.decided_shots:
+            existing = self.decided_shots[shot_id]
+            existing_result = existing.get("result") if isinstance(existing, dict) else None
+            if existing_result == result:
+                live_log(
+                    "LIVE-16",
+                    "shot_idempotent",
+                    live_session_id=self.live_session_id,
+                    shot_id=shot_id,
+                )
+                return existing
             live_log(
                 "LIVE-16",
-                "shot_idempotent",
+                "shot_id_collision",
                 live_session_id=self.live_session_id,
                 shot_id=shot_id,
+                existing_result=existing_result,
+                new_result=result,
             )
-            return self.decided_shots[shot_id]
+            return None
 
         src = engine if engine is not None else self.engine
         payload = None
@@ -854,6 +896,16 @@ class LiveRuntime:
                     "shot_without_parent",
                     live_session_id=self.live_session_id,
                     shot_id=shot_id,
+                )
+                return None
+            if payload.get("result") != result:
+                live_log(
+                    "LIVE-16",
+                    "shot_id_collision",
+                    live_session_id=self.live_session_id,
+                    shot_id=shot_id,
+                    existing_result=payload.get("result"),
+                    new_result=result,
                 )
                 return None
         if payload is None:
@@ -883,6 +935,8 @@ class LiveRuntime:
             if not shot_id:
                 continue
             self.decided_shots[shot_id] = payload
+        self._seed_shot_index = next_shot_index_after(self.decided_shots)
+        self._apply_shot_index_seed()
 
 
 def _shot_point_from_engine(engine: Any, shot: Any, degraded: bool) -> dict:
