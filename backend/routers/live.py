@@ -16,6 +16,7 @@ from typing import Any, Optional
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from auth import _decode_token, _resolve_user
+from config import settings
 from db import SessionLocal
 from live_constants import CLOCK_RESYNC_S, DISCONNECT_TTL_S, PROTOCOL_VERSION
 from live_engine import default_engine_factory
@@ -27,6 +28,30 @@ from live_runtime import STATUS_ACTIVE, STATUS_COMPLETED, LiveRuntime
 logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["live"])
+
+WS_ORIGIN_REJECT_CODE = 4403
+
+
+def _normalize_origin(origin: Optional[str]) -> str:
+    return (origin or "").strip().rstrip("/")
+
+
+def origin_is_allowed(
+    origin: Optional[str],
+    allowed: Optional[list[str]] = None,
+) -> bool:
+    """Exact Origin match against CORS_ORIGINS + local dev. '*' is never allow-all."""
+    normalized = _normalize_origin(origin)
+    if not normalized:
+        return False
+    origins = allowed if allowed is not None else settings.websocket_allowed_origins
+    allowed_set = {_normalize_origin(item) for item in origins if item}
+    return normalized in allowed_set
+
+
+async def _reject_origin(websocket: WebSocket, origin: Optional[str]) -> None:
+    logger.warning("live websocket origin rejected origin=%r", origin or "")
+    await websocket.close(code=WS_ORIGIN_REJECT_CODE)
 
 
 def _state(ws: WebSocket, name: str, default: Any) -> Any:
@@ -162,6 +187,10 @@ async def _warmup_engine(ws: WebSocket) -> Any:
 
 @router.websocket("/live")
 async def live_socket(websocket: WebSocket) -> None:
+    origin = websocket.headers.get("origin")
+    if not origin_is_allowed(origin):
+        await _reject_origin(websocket, origin)
+        return
     await websocket.accept()
     user = await _authenticate(websocket)
     if user is None:

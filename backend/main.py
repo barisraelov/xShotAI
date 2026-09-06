@@ -39,7 +39,7 @@ import crud
 import cv_pipeline
 import models  # noqa: F401  — ensures Job/User are registered on Base.metadata
 from auth import get_current_user_optional
-from config import settings
+from config import LOCAL_DEV_ORIGINS, settings
 from court_mapper import CourtMapper
 from db import Base, SessionLocal, engine, get_db
 from result_builder import build_real_result as _build_real_result
@@ -145,18 +145,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Origins come from settings.CORS_ORIGINS (default "*" for the initial cloud
-# deploy). Local dev origins — localhost:5173 (Vite) and :8080 (prototype) — are
-# always allowed so a tightened production list never breaks local work.
-_LOCAL_DEV_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
+# Origins come from settings.CORS_ORIGINS (default "*" for HTTP). Local Vite
+# and prototype origins are always merged into a tightened list so Production
+# CORS never blocks local work. WebSocket /live uses the same local set plus
+# explicit CORS_ORIGINS entries and never treats "*" as allow-all.
 _cors_origins = settings.cors_origins_list
 if _cors_origins != ["*"]:
-    _cors_origins = sorted(set(_cors_origins) | set(_LOCAL_DEV_ORIGINS))
+    _cors_origins = sorted(set(_cors_origins) | set(LOCAL_DEV_ORIGINS))
 
 app.add_middleware(
     CORSMiddleware,
