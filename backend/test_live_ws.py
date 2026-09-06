@@ -106,6 +106,10 @@ class LiveWsTests(unittest.TestCase):
             self.assertEqual(complete["result"]["summary"]["made"], 1)
             self.assertIsNone(complete["result"]["shot_points"][0]["zone"])
             self.assertIsNone(complete["result"]["shot_points"][0]["origin"]["court"])
+            diag = complete.get("live_diagnostics") or {}
+            self.assertEqual(diag.get("frames_received"), 3)
+            self.assertEqual(diag.get("start_path"), "normal_countdown")
+            self.assertIn("frames_processed", diag)
 
         self.assertEqual(self.engines[0].frames, [0, 1, 2])
         self.assertTrue(self.persist.history)

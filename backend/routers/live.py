@@ -259,6 +259,7 @@ async def live_socket(websocket: WebSocket) -> None:
                         "session_id": existing.history_session_id,
                         "result": existing.completed_result,
                         "reason": "already_completed",
+                        "live_diagnostics": existing.diagnostics_summary(),
                     })
                 return
             runtime = existing
@@ -366,7 +367,8 @@ async def live_socket(websocket: WebSocket) -> None:
             elif typ == "go":
                 if runtime is None:
                     continue
-                runtime.go()
+                path = msg.get("start_path")
+                runtime.go(start_path=path if isinstance(path, str) else None)
                 q_event.set()
             elif typ == "stop":
                 if runtime is None:

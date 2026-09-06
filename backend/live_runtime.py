@@ -128,6 +128,8 @@ class LiveRuntime:
         self.frames_captured = 0
         self.frames_sent = 0
         self.frames_received = 0
+        self.frames_decoded = 0
+        self.frames_rejected_invalid = 0
         self.frames_processed = 0
         self.frames_dropped_client = 0
         self.frames_dropped_server = 0
@@ -135,6 +137,21 @@ class LiveRuntime:
         self.max_queue_size = 0
         self.overload_events = 0
         self.gap_count = 0
+        self.inference_calls: dict[str, int] = {"ball_hoop": 0, "contact": 0}
+        self.ball_detections = 0
+        self.hoop_detections = 0
+        self.person_detections = 0
+        self.state_transitions: dict[str, int] = {}
+        self.shots_started = 0
+        self.shots_decided_make = 0
+        self.shots_decided_miss = 0
+        self.start_path: Optional[str] = None
+        self.diagnostics_generation = 0
+        self._go_mono: Optional[float] = None
+        self._last_engine_mode: Optional[str] = None
+        self._last_ball_raw = 0
+        self._last_hoop_raw = 0
+        self._last_contact_checks = 0
 
         self.engine_started = started
         self.frame_width: Optional[int] = None
@@ -224,6 +241,97 @@ class LiveRuntime:
             "overload_events": self.overload_events,
             "reconnect_count": self.reconnect_count,
             "gap_count": self.gap_count,
+        }
+
+    def _reset_generation_diagnostics(self, now: float) -> None:
+        self.frames_captured = 0
+        self.frames_sent = 0
+        self.frames_received = 0
+        self.frames_decoded = 0
+        self.frames_rejected_invalid = 0
+        self.frames_processed = 0
+        self.frames_dropped_client = 0
+        self.frames_dropped_server = 0
+        self.duplicate_stale_frames = 0
+        self.max_queue_size = 0
+        self.overload_events = 0
+        self.gap_count = 0
+        self.inference_calls = {"ball_hoop": 0, "contact": 0}
+        self.ball_detections = 0
+        self.hoop_detections = 0
+        self.person_detections = 0
+        self.state_transitions = {}
+        self.shots_started = 0
+        self.shots_decided_make = 0
+        self.shots_decided_miss = 0
+        self.diagnostics_generation = int(self.generation)
+        self._go_mono = now
+        self._last_engine_mode = _mode_name(self.engine)
+        self._last_ball_raw = int(getattr(self.engine, "ball_raw_count", 0) or 0)
+        self._last_hoop_raw = int(getattr(self.engine, "hoop_raw_count", 0) or 0)
+        sampler = getattr(self.engine, "contact_sampler", None)
+        self._last_contact_checks = int(getattr(sampler, "check_count", 0) or 0)
+        self.latency_samples = []
+
+    def _note_engine_observations(self, engine: Any) -> None:
+        if engine is None:
+            return
+        ball = int(getattr(engine, "ball_raw_count", 0) or 0)
+        hoop = int(getattr(engine, "hoop_raw_count", 0) or 0)
+        if ball >= self._last_ball_raw:
+            self.ball_detections += ball - self._last_ball_raw
+        self._last_ball_raw = ball
+        if hoop >= self._last_hoop_raw:
+            self.hoop_detections += hoop - self._last_hoop_raw
+        self._last_hoop_raw = hoop
+        sampler = getattr(engine, "contact_sampler", None)
+        checks = int(getattr(sampler, "check_count", 0) or 0)
+        if checks >= self._last_contact_checks:
+            self.inference_calls["contact"] = self.inference_calls.get("contact", 0) + (
+                checks - self._last_contact_checks
+            )
+        self._last_contact_checks = checks
+        mode = _mode_name(engine)
+        prev = self._last_engine_mode
+        if mode and prev and mode != prev:
+            key = f"{prev}>{mode}"
+            self.state_transitions[key] = self.state_transitions.get(key, 0) + 1
+            if prev != "SHOT" and mode == "SHOT":
+                self.shots_started += 1
+        if mode:
+            self._last_engine_mode = mode
+
+    def diagnostics_summary(self, *, now: Optional[float] = None) -> dict[str, Any]:
+        stats = self.latency_stats()
+        elapsed = None
+        if self._go_mono is not None:
+            t1 = self.clock() if now is None else now
+            elapsed = max(0.0, float(t1) - float(self._go_mono))
+        return {
+            "live_session_id": self.live_session_id,
+            "generation": int(self.diagnostics_generation),
+            "start_path": self.start_path,
+            "session_s": round(elapsed, 3) if elapsed is not None else None,
+            "frames_received": self.frames_received,
+            "frames_decoded": self.frames_decoded,
+            "frames_rejected_invalid": self.frames_rejected_invalid,
+            "frames_processed": self.frames_processed,
+            "frames_dropped_queue": self.frames_dropped_server,
+            "frames_captured": self.frames_captured,
+            "frames_sent": self.frames_sent,
+            "frames_dropped_client": self.frames_dropped_client,
+            "inference_calls": dict(self.inference_calls),
+            "ball_detections": self.ball_detections,
+            "hoop_detections": self.hoop_detections,
+            "person_detections": self.person_detections,
+            "state_transitions": dict(self.state_transitions),
+            "shots_started": self.shots_started,
+            "shots_decided_make": self.shots_decided_make,
+            "shots_decided_miss": self.shots_decided_miss,
+            "reconnect_count": self.reconnect_count,
+            "average_latency": stats["average_latency"],
+            "p95_latency": stats["p95_latency"],
+            "max_latency": stats["max_latency"],
         }
 
     # ── overload (LIVE-12 / LIVE-13) ────────────────────────────────────────
@@ -368,7 +476,7 @@ class LiveRuntime:
         if callable(seed):
             seed(next_idx)
 
-    def go(self, now: Optional[float] = None) -> bool:
+    def go(self, now: Optional[float] = None, start_path: Optional[str] = None) -> bool:
         now = self.clock() if now is None else now
         with self._go_lock:
             if self.go_started:
@@ -401,21 +509,27 @@ class LiveRuntime:
                     return False
             self.status = STATUS_ACTIVE
             self.go_started = True
+            if start_path in ("normal_countdown", "reconnect_reactivation"):
+                self.start_path = start_path
+            elif self.start_path is None:
+                self.start_path = "normal_countdown"
             self.queue.clear()
             self.metadata.clear()
             self.max_seen_id = -1
-            self.frames_received = 0
-            self.frames_processed = 0
-            self.frames_dropped_server = 0
-            self.duplicate_stale_frames = 0
-            self.max_queue_size = 0
-            self.gap_count = 0
             self._drop_times.clear()
             self.degraded = False
             self.degraded_since = None
             self._last_e2e_ms = None
             self._latency_high_since = None
-            live_log("LIVE-18", "go", live_session_id=self.live_session_id, user_id=self.user_id)
+            self._reset_generation_diagnostics(now)
+            live_log(
+                "LIVE-18",
+                "go",
+                live_session_id=self.live_session_id,
+                user_id=self.user_id,
+                start_path=self.start_path,
+                generation=self.diagnostics_generation,
+            )
             self._emit({"type": "go_ack", "live_session_id": self.live_session_id})
             return True
 
@@ -462,6 +576,7 @@ class LiveRuntime:
             result = build_real_result(self.live_session_id, shot_points, None)
         self.completed_result = result
         self.history_session_id = history_id
+        diagnostics = self.diagnostics_summary(now=now)
         live_log(
             "LIVE-18",
             "session_complete",
@@ -470,12 +585,14 @@ class LiveRuntime:
             shots=len(shot_points),
             history_session_id=history_id,
         )
+        live_log("LIVE-18", "session_diagnostics", **diagnostics)
         self._emit({
             "type": "session_complete",
             "live_session_id": self.live_session_id,
             "session_id": history_id,
             "result": result,
             "reason": reason,
+            "live_diagnostics": diagnostics,
         })
         return result
 
@@ -547,9 +664,11 @@ class LiveRuntime:
         try:
             validate_header(header)
         except FrameProtocolError:
+            self.frames_rejected_invalid += 1
             live_log("LIVE-09", "bad_header", live_session_id=self.live_session_id)
             return "rejected"
         if header.get("live_session_id") not in (None, "", self.live_session_id):
+            self.frames_rejected_invalid += 1
             return "rejected"
         frame_id = int(header["frame_id"])
         self.frames_received += 1
@@ -764,6 +883,8 @@ class LiveRuntime:
 
             start = self.clock() if now is None else now
             frame_bgr = self._decode_jpeg(item.jpeg)
+            if frame_bgr is not None:
+                self.frames_decoded += 1
             engine, dim_changed = self._engine_for_decoded_frame(frame_bgr, item.header)
             if engine is None:
                 return ProcessOutcome(ignored=True, frame_id=item.frame_id)
@@ -781,6 +902,8 @@ class LiveRuntime:
                 return ProcessOutcome(ignored=True, frame_id=item.frame_id)
             commit_gen = self.generation
             decided = engine.process_frame(frame_bgr, item.frame_id)
+            self.inference_calls["ball_hoop"] = self.inference_calls.get("ball_hoop", 0) + 1
+            self._note_engine_observations(engine)
             end = self.clock()
             return self._commit_process(item, commit_gen, decided, start, end, engine=engine)
 
@@ -838,6 +961,11 @@ class LiveRuntime:
             if payload is None:
                 continue
             kept.append(shot)
+            result = payload.get("result")
+            if result == "made":
+                self.shots_decided_make += 1
+            elif result == "missed":
+                self.shots_decided_miss += 1
             event = {
                 "type": "shot_decided",
                 "trace_code": "LIVE-16",

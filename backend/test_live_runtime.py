@@ -41,6 +41,8 @@ class RecordingEngine:
         self._gate = threading.Lock()
         self.global_mode = type("M", (), {"name": "IDLE"})()
         self._next_shot_index = 1
+        self.ball_raw_count = 0
+        self.hoop_raw_count = 0
 
     def start(self, **kwargs) -> None:
         self.start_kwargs = kwargs
@@ -865,6 +867,90 @@ class LiveRuntimePatchTests(unittest.TestCase):
         self.assertFalse(any(m.get("result") == "missed" for m in outbound))
         self.assertEqual(outcome.decided, [])
         self.assertEqual(persist.shots[("live-1", "s001")]["result"], "made")
+
+
+class LiveDiagnosticsTests(unittest.TestCase):
+    def test_go_resets_counters_for_generation(self) -> None:
+        engine = RecordingEngine()
+        outbound: list[dict] = []
+        rt = LiveRuntime(
+            "live-diag",
+            "user-1",
+            engine,
+            persist=MemoryLivePersist(),
+            on_outbound=outbound.append,
+        )
+        rt.frames_received = 9
+        rt.go(start_path="normal_countdown")
+        self.assertEqual(rt.frames_received, 0)
+        self.assertEqual(rt.start_path, "normal_countdown")
+        self.assertEqual(rt.diagnostics_generation, 0)
+        jpeg = jpeg_of(16, 16)
+        engine.ball_raw_count = 2
+        engine.hoop_raw_count = 1
+        engine.global_mode = type("M", (), {"name": "SHOT"})()
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        self.assertEqual(rt.frames_received, 1)
+        self.assertEqual(rt.frames_decoded, 1)
+        self.assertEqual(rt.frames_processed, 1)
+        self.assertEqual(rt.ball_detections, 2)
+        self.assertEqual(rt.hoop_detections, 1)
+        self.assertGreaterEqual(rt.inference_calls["ball_hoop"], 1)
+        self.assertEqual(rt.shots_started, 1)
+
+    def test_stop_diagnostics_isolated_from_next_generation(self) -> None:
+        engine = RecordingEngine()
+        outbound: list[dict] = []
+        rt = LiveRuntime(
+            "live-diag-2",
+            "user-1",
+            engine,
+            persist=MemoryLivePersist(),
+            on_outbound=outbound.append,
+        )
+        rt.go(start_path="normal_countdown")
+        jpeg = jpeg_of(16, 16)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.process_one()
+        received = rt.frames_received
+        rt.stop()
+        complete = [m for m in outbound if m.get("type") == "session_complete"][-1]
+        diag = complete["live_diagnostics"]
+        self.assertEqual(diag["frames_received"], received)
+        self.assertEqual(diag["generation"], 0)
+        self.assertEqual(diag["start_path"], "normal_countdown")
+        self.assertNotIn("live_diagnostics", complete["result"])
+        self.assertEqual(
+            rt.accept_frame(_header(rt.live_session_id, 1, width=16, height=16), jpeg),
+            "ignored",
+        )
+        self.assertEqual(rt.frames_received, received)
+
+    def test_rejected_invalid_frame_is_counted(self) -> None:
+        rt = _runtime()
+        rt.go()
+        bad = _header(rt.live_session_id, 0)
+        bad.pop("protocol_version")
+        self.assertEqual(rt.accept_frame(bad, jpeg_of(16, 16)), "rejected")
+        self.assertEqual(rt.frames_rejected_invalid, 1)
+        self.assertEqual(rt.frames_received, 0)
+
+    def test_stale_generation_frame_does_not_count_processed(self) -> None:
+        engine = RecordingEngine()
+        rt = _runtime(engine=engine)
+        rt.go(start_path="normal_countdown")
+        jpeg = jpeg_of(16, 16)
+        rt.accept_frame(_header(rt.live_session_id, 0, width=16, height=16), jpeg)
+        rt.generation += 1
+        outcome = rt.process_one()
+        self.assertTrue(outcome.ignored)
+        self.assertEqual(rt.frames_received, 1)
+        self.assertEqual(rt.frames_processed, 0)
+        self.assertEqual(rt.inference_calls["ball_hoop"], 0)
+        summary = rt.diagnostics_summary()
+        self.assertEqual(summary["generation"], 0)
+        self.assertEqual(summary["live_session_id"], rt.live_session_id)
 
 
 if __name__ == "__main__":

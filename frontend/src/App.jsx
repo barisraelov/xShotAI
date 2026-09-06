@@ -83,6 +83,7 @@ const INITIAL_STATE = {
   result: demoView() ? DEMO_STUB : null,
   error:  null,
   file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
+  liveDiagnostics: null,
 }
 
 const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate', 'live'])
@@ -109,6 +110,7 @@ export default function App() {
     result: state.result,
     error:  state.error,
     file:   state.file,
+    liveDiagnostics: state.liveDiagnostics,
   }
 
   return (

@@ -120,4 +120,26 @@ describe('LIVE-22 contain / full viewport CSS', () => {
     assert.match(css, /100dvh/)
     assert.doesNotMatch(css, /object-fit:\s*cover/)
   })
+
+  it('countdown overlay is dark, large, and above the HUD', () => {
+    const css = readFileSync(join(here, '..', 'screens', 'Live.css'), 'utf8')
+    assert.match(css, /\.live-countdown[\s\S]*z-index:\s*6/)
+    assert.match(css, /rgba\(0,\s*0,\s*0,\s*0\.72\)/)
+    assert.match(css, /\.live-countdown-num/)
+  })
+})
+
+describe('Live diagnostics UI', () => {
+  it('session screen shows Live diagnostics from session_complete', () => {
+    const jsx = readFileSync(join(here, '..', 'screens', 'Session.jsx'), 'utf8')
+    assert.match(jsx, /Live diagnostics/)
+    assert.match(jsx, /liveDiagnostics/)
+    assert.match(jsx, /start_path/)
+  })
+
+  it('does not await unlockSounds on Start', () => {
+    const jsx = readFileSync(join(here, '..', 'screens', 'Live.jsx'), 'utf8')
+    assert.match(jsx, /void unlockSounds/)
+    assert.doesNotMatch(jsx, /await unlockSounds/)
+  })
 })

@@ -1,6 +1,6 @@
 /** Live client session controller (FIX-01 / FIX-02 / FIX-07 / PATCH-01 / PATCH-02). Inject timers/IO for tests. */
 
-export const COUNTDOWN_STEP_MS = 700
+export const COUNTDOWN_STEP_MS = 1000
 export const STOP_ACK_TIMEOUT_MS = 12000
 export const TELEMETRY_MS = 30000
 export const COUNTDOWN_STEPS = [3, 2, 1, 'GO']
@@ -68,6 +68,7 @@ export function createLiveClientSession(deps = {}) {
   let lastOffset = null
   let statsResets = 0
   let pingId = 0
+  let startPath = null
 
   function recordSend(obj) {
     sent.push(obj)
@@ -164,8 +165,9 @@ export function createLiveClientSession(deps = {}) {
       resetGate()
       return
     }
+    startPath = 'normal_countdown'
     goSent = true
-    recordSend({ type: 'go' })
+    recordSend({ type: 'go', start_path: startPath })
   }
 
   function requestGoHandshake() {
@@ -176,21 +178,23 @@ export function createLiveClientSession(deps = {}) {
       onConn('reconnecting')
       return
     }
+    startPath = 'reconnect_reactivation'
     goSent = true
-    recordSend({ type: 'go' })
+    recordSend({ type: 'go', start_path: startPath })
   }
 
   function startCountdown() {
     if (pendingStop || !startRequested || completed || disposed) return
-    if (reactivateWithoutCountdown) return
+    if (goAcked) return
+    reactivateWithoutCountdown = false
     invalidateCountdown()
     const gen = countdownGen
     enterCountdown()
     setPhase('countdown')
+    startPath = 'normal_countdown'
     let i = 0
     const step = () => {
       if (gen !== countdownGen || pendingStop || completed || disposed) return
-      if (reactivateWithoutCountdown) return
       if (i >= COUNTDOWN_STEPS.length) {
         sendGo(gen)
         return
@@ -233,6 +237,7 @@ export function createLiveClientSession(deps = {}) {
     get statsResets() { return statsResets },
     get reactivateWithoutCountdown() { return reactivateWithoutCountdown },
     get retryFromReactivate() { return retryFromReactivate },
+    get startPath() { return startPath },
 
     shouldReconnect() {
       if (disposed || completed) return false
@@ -306,8 +311,9 @@ export function createLiveClientSession(deps = {}) {
         ensureStopTimeout()
         return
       }
-      if (resumed) {
-        if (goAcked) {
+      if (goAcked) {
+        if (resumed) {
+          startPath = 'reconnect_reactivation'
           onConn('live')
           setPhase('live')
           startTelemetry()
@@ -315,11 +321,6 @@ export function createLiveClientSession(deps = {}) {
           beginCapture()
           return
         }
-        onConn('prepared')
-        if (startRequested) startCountdown()
-        return
-      }
-      if (goAcked || reactivateWithoutCountdown || goSent) {
         stopCapture()
         stopTelemetry()
         goAcked = false
@@ -327,11 +328,10 @@ export function createLiveClientSession(deps = {}) {
         reactivateWithoutCountdown = true
         resetGate()
         onConn('reconnecting')
-        setPhase('countdown')
-        onCountdown(null)
         requestGoHandshake()
         return
       }
+      goSent = false
       onConn('prepared')
       if (startRequested) startCountdown()
     },
@@ -356,8 +356,7 @@ export function createLiveClientSession(deps = {}) {
       enterLive()
       setPhase('live')
       onConn('live')
-      onCountdown('GO')
-      sto(() => onCountdown(null), 450)
+      onCountdown(null)
       beginCapture()
       startTelemetry()
     },
@@ -389,12 +388,12 @@ export function createLiveClientSession(deps = {}) {
         setPhase('go_error')
         return
       }
+      startRequested = true
       if (retryFromReactivate) {
         reactivateWithoutCountdown = true
         requestGoHandshake()
         return
       }
-      startRequested = true
       startCountdown()
     },
 

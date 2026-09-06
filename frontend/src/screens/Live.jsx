@@ -87,6 +87,7 @@ export default function Live({ navigate }) {
         navigate('session', {
           result: msg.result,
           jobId: msg.session_id || liveSessionIdRef.current,
+          liveDiagnostics: msg.live_diagnostics || null,
           error: null,
         })
       },
@@ -343,12 +344,16 @@ export default function Live({ navigate }) {
 
   async function handleStart() {
     setErr(null)
-    if (soundsRef.current) await unlockSounds(soundsRef.current)
+    if (soundsRef.current) {
+      void unlockSounds(soundsRef.current).catch(() => {})
+    }
     await sessionRef.current.requestStart()
   }
 
   async function handleRetry() {
-    if (soundsRef.current) await unlockSounds(soundsRef.current)
+    if (soundsRef.current) {
+      void unlockSounds(soundsRef.current).catch(() => {})
+    }
     sessionRef.current.retryStart()
   }
 
@@ -413,7 +418,9 @@ export default function Live({ navigate }) {
       )}
 
       {countdown != null && (
-        <div className="live-countdown">{countdown}</div>
+        <div className="live-countdown" aria-live="assertive">
+          <span className="live-countdown-num">{countdown}</span>
+        </div>
       )}
 
       {err && <div className="error-box live-err">{err}</div>}

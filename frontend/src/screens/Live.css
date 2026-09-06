@@ -145,12 +145,18 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 18vw;
-  font-weight: 800;
-  color: #fff;
-  text-shadow: 0 8px 32px rgba(0, 0, 0, 0.55);
+  background: rgba(0, 0, 0, 0.72);
   pointer-events: none;
-  z-index: 4;
+  z-index: 6;
+}
+
+.live-countdown-num {
+  font-size: min(28vw, 160px);
+  font-weight: 800;
+  line-height: 1;
+  color: #fff;
+  letter-spacing: 0.04em;
+  text-shadow: 0 4px 24px rgba(0, 0, 0, 0.85);
 }
 
 .live-banner {
