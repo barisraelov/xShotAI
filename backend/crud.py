@@ -6,12 +6,13 @@ The ORM model `Session` shadows sqlalchemy's `Session` type, so db-handle
 parameters are typed with the `DbSession` alias below.
 """
 
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session as DbSession
 
-from models import Job, Session, User
+from models import Job, LiveSession, LiveShot, Session, User
 from schemas import UserCreate
 
 
@@ -128,3 +129,101 @@ def get_user_by_username(db: DbSession, username: str) -> Optional[User]:
 
 def get_user_by_id(db: DbSession, user_id: str) -> Optional[User]:
     return db.get(User, user_id)
+
+
+# ── Live sessions ────────────────────────────────────────────────────────────
+
+def create_live_session(db: DbSession, *, live_session_id: str, user_id: str) -> LiveSession:
+    row = LiveSession(id=live_session_id, user_id=user_id, status="prepare")
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def get_live_session(db: DbSession, live_session_id: str) -> Optional[LiveSession]:
+    return db.get(LiveSession, live_session_id)
+
+
+def ensure_active_live_session(
+    db: DbSession, *, live_session_id: str, user_id: str
+) -> LiveSession:
+    """Create the live_sessions row on GO, or reuse it (LIVE-18 idempotent)."""
+    row = db.get(LiveSession, live_session_id)
+    if row is None:
+        row = LiveSession(
+            id=live_session_id,
+            user_id=user_id,
+            status="active",
+            started_at=datetime.now(timezone.utc),
+        )
+        db.add(row)
+        db.commit()
+        db.refresh(row)
+        return row
+    if row.status == "prepare":
+        row.status = "active"
+        row.started_at = datetime.now(timezone.utc)
+        db.commit()
+        db.refresh(row)
+    return row
+
+
+def complete_live_session(
+    db: DbSession,
+    live_session_id: str,
+    *,
+    result: dict,
+    history_session_id: Optional[str],
+) -> Optional[LiveSession]:
+    row = db.get(LiveSession, live_session_id)
+    if row is None:
+        return None
+    row.status = "completed"
+    row.completed_at = datetime.now(timezone.utc)
+    row.result = result
+    row.history_session_id = history_session_id
+    db.commit()
+    db.refresh(row)
+    return row
+
+
+def upsert_live_shot(
+    db: DbSession,
+    *,
+    live_session_id: str,
+    shot_id: str,
+    result: str,
+    decision_frame: Optional[int],
+    payload: dict,
+    degraded: bool,
+) -> tuple[LiveShot, bool]:
+    """Insert a decided shot. Returns (row, inserted). Existing rows are left unchanged."""
+    stmt = select(LiveShot).where(
+        LiveShot.live_session_id == live_session_id,
+        LiveShot.shot_id == shot_id,
+    )
+    existing = db.scalars(stmt).first()
+    if existing is not None:
+        return existing, False
+    row = LiveShot(
+        live_session_id=live_session_id,
+        shot_id=shot_id,
+        result=result,
+        decision_frame=decision_frame,
+        payload=payload,
+        degraded=degraded,
+    )
+    db.add(row)
+    db.commit()
+    db.refresh(row)
+    return row, True
+
+
+def list_live_shots(db: DbSession, live_session_id: str) -> list[LiveShot]:
+    stmt = (
+        select(LiveShot)
+        .where(LiveShot.live_session_id == live_session_id)
+        .order_by(LiveShot.shot_id.asc())
+    )
+    return list(db.scalars(stmt).all())

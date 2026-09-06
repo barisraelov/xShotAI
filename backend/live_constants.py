@@ -1,0 +1,25 @@
+"""Frozen Live numeric/protocol constants (LIVE-01 … LIVE-25)."""
+
+PROTOCOL_VERSION = 1
+FRAME_MAGIC = b"XSH1"
+JPEG_QUALITY = 0.80
+
+QUEUE_MAXSIZE = 6
+
+OVERLOAD_DROPS = 20
+OVERLOAD_DROP_WINDOW_S = 2.0
+OVERLOAD_LATENCY_MS = 500.0
+OVERLOAD_LATENCY_HOLD_S = 1.0
+OVERLOAD_RECOVERY_S = 3.0
+OVERLOAD_PROMPT_S = 10.0
+
+RECONNECT_KEEP_ENGINE_S = 0.5
+DISCONNECT_TTL_S = 10.0
+METADATA_TTL_S = 15.0
+CLOCK_RESYNC_S = 30.0
+DELAYED_SOUND_S = 2.0
+
+HUMAN_OVERLOAD = "החיבור או העיבוד איטיים כרגע — ייתכן עיכוב בזיהוי."
+HUMAN_OVERLOAD_PROMPT = (
+    "החיבור או העיבוד מתקשים לעמוד בקצב. להמשיך או לסיים את הסשן?"
+)

@@ -48,6 +48,7 @@ RUN uv pip install --system --no-cache -r requirements.txt
 
 # Application source (model weights best.pt / yolov8n.pt included).
 COPY backend/ ./
+RUN test -s /app/best.pt && test -s /app/yolov8n.pt
 
 EXPOSE 8000
 

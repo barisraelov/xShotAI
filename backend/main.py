@@ -39,80 +39,16 @@ import crud
 import cv_pipeline
 import models  # noqa: F401  — ensures Job/User are registered on Base.metadata
 from auth import get_current_user_optional
-from config import settings
+from config import LOCAL_DEV_ORIGINS, settings
 from court_mapper import CourtMapper
 from db import Base, SessionLocal, engine, get_db
-from feedback import generate_feedback
+from result_builder import build_real_result as _build_real_result
 from routers import auth as auth_router
+from routers import live as live_router
 from routers import sessions as sessions_router
 from routers import users as users_router
 
 logger = logging.getLogger(__name__)
-
-
-# ── Result builder ─────────────────────────────────────────────────────────────
-
-def _build_real_result(
-    job_id: str,
-    shot_points: list[dict],
-    homography_list: Optional[list] = None,
-) -> dict:
-    """
-    Derive the full AnalyzeResult from real shot_points produced by cv_pipeline.
-    When calibration was provided, origin.court, zone, and zone_aggregates are
-    populated; otherwise they remain null / empty (graceful degradation).
-    """
-    total    = len(shot_points)
-    made     = sum(1 for s in shot_points if s["result"] == "made")
-    missed   = total - made
-    accuracy = round(made / total * 100, 2) if total > 0 else 0.0
-
-    # Aggregate zone stats from individual shot zone data (if present).
-    zone_map: dict = {}
-    for s in shot_points:
-        z = s.get("zone")
-        if not z:
-            continue
-        pid = z["polygon_id"]
-        if pid not in zone_map:
-            zone_map[pid] = {
-                "polygon_id":  pid,
-                "range_class": z["range_class"],
-                "label":       z["label"],
-                "attempts":    0,
-                "made":        0,
-            }
-        zone_map[pid]["attempts"] += 1
-        if s["result"] == "made":
-            zone_map[pid]["made"] += 1
-
-    zone_aggregates = []
-    for z in zone_map.values():
-        z["accuracy_pct"] = (
-            round(z["made"] / z["attempts"] * 100, 2) if z["attempts"] > 0 else 0.0
-        )
-        zone_aggregates.append(z)
-
-    out = {
-        "job_id": job_id,
-        "status": "completed",
-        "summary": {
-            "total_shots":  total,
-            "made":         made,
-            "missed":       missed,
-            "accuracy_pct": accuracy,
-        },
-        "shot_points":     shot_points,
-        "zone_aggregates": zone_aggregates,
-        "mapping": {
-            "court_norm_version": "1.0",
-            "polygon_version":    "1.0",
-            "y_flip_applied":     False,
-            "homography_matrix":  homography_list,
-        },
-    }
-    out["feedback"] = generate_feedback(out)
-    return out
 
 
 # ── Background tasks ───────────────────────────────────────────────────────────
@@ -209,18 +145,13 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
-# Origins come from settings.CORS_ORIGINS (default "*" for the initial cloud
-# deploy). Local dev origins — localhost:5173 (Vite) and :8080 (prototype) — are
-# always allowed so a tightened production list never breaks local work.
-_LOCAL_DEV_ORIGINS = [
-    "http://localhost:5173",
-    "http://127.0.0.1:5173",
-    "http://localhost:8080",
-    "http://127.0.0.1:8080",
-]
+# Origins come from settings.CORS_ORIGINS (default "*" for HTTP). Local Vite
+# and prototype origins are always merged into a tightened list so Production
+# CORS never blocks local work. WebSocket /live uses the same local set plus
+# explicit CORS_ORIGINS entries and never treats "*" as allow-all.
 _cors_origins = settings.cors_origins_list
 if _cors_origins != ["*"]:
-    _cors_origins = sorted(set(_cors_origins) | set(_LOCAL_DEV_ORIGINS))
+    _cors_origins = sorted(set(_cors_origins) | set(LOCAL_DEV_ORIGINS))
 
 app.add_middleware(
     CORSMiddleware,
@@ -232,6 +163,7 @@ app.add_middleware(
 app.include_router(auth_router.router)
 app.include_router(users_router.router)
 app.include_router(sessions_router.router)
+app.include_router(live_router.router)
 
 
 @app.get("/version")

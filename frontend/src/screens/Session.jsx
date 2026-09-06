@@ -107,7 +107,7 @@ function zoneBreakdown(shotPoints) {
   return { twos: calc(twos), threes: calc(threes) }
 }
 
-export default function Session({ navigate, result }) {
+export default function Session({ navigate, result, liveDiagnostics }) {
   if (!result) {
     return (
       <div className="screen-enter">
@@ -224,6 +224,41 @@ export default function Session({ navigate, result }) {
           </div>
         )}
       </section>
+
+      {liveDiagnostics && (
+        <section className="live-diag" aria-label="Live diagnostics">
+          <div className="story-kicker">Live diagnostics</div>
+          <h3 className="story-title">Session counters</h3>
+          <dl className="live-diag-grid">
+            <div><dt>start_path</dt><dd>{String(liveDiagnostics.start_path ?? '—')}</dd></div>
+            <div><dt>generation</dt><dd>{liveDiagnostics.generation ?? '—'}</dd></div>
+            <div><dt>session_s</dt><dd>{liveDiagnostics.session_s ?? '—'}</dd></div>
+            <div><dt>frames_received</dt><dd>{liveDiagnostics.frames_received ?? 0}</dd></div>
+            <div><dt>frames_decoded</dt><dd>{liveDiagnostics.frames_decoded ?? 0}</dd></div>
+            <div><dt>frames_processed</dt><dd>{liveDiagnostics.frames_processed ?? 0}</dd></div>
+            <div><dt>frames_dropped_queue</dt><dd>{liveDiagnostics.frames_dropped_queue ?? 0}</dd></div>
+            <div><dt>frames_rejected_invalid</dt><dd>{liveDiagnostics.frames_rejected_invalid ?? 0}</dd></div>
+            <div><dt>ball_detections</dt><dd>{liveDiagnostics.ball_detections ?? 0}</dd></div>
+            <div><dt>hoop_detections</dt><dd>{liveDiagnostics.hoop_detections ?? 0}</dd></div>
+            <div><dt>person_detections</dt><dd>{liveDiagnostics.person_detections ?? 0}</dd></div>
+            <div><dt>shots_started</dt><dd>{liveDiagnostics.shots_started ?? 0}</dd></div>
+            <div><dt>shots_decided_make</dt><dd>{liveDiagnostics.shots_decided_make ?? 0}</dd></div>
+            <div><dt>shots_decided_miss</dt><dd>{liveDiagnostics.shots_decided_miss ?? 0}</dd></div>
+            <div><dt>reconnect_count</dt><dd>{liveDiagnostics.reconnect_count ?? 0}</dd></div>
+            <div><dt>inference ball_hoop</dt><dd>{liveDiagnostics.inference_calls?.ball_hoop ?? 0}</dd></div>
+            <div><dt>inference contact</dt><dd>{liveDiagnostics.inference_calls?.contact ?? 0}</dd></div>
+            <div><dt>avg_latency_ms</dt><dd>{liveDiagnostics.average_latency ?? '—'}</dd></div>
+            <div><dt>p95_latency_ms</dt><dd>{liveDiagnostics.p95_latency ?? '—'}</dd></div>
+            <div><dt>max_latency_ms</dt><dd>{liveDiagnostics.max_latency ?? '—'}</dd></div>
+          </dl>
+          {liveDiagnostics.state_transitions && Object.keys(liveDiagnostics.state_transitions).length > 0 && (
+            <p className="live-diag-transitions">
+              state_transitions:{' '}
+              {Object.entries(liveDiagnostics.state_transitions).map(([k, v]) => `${k}×${v}`).join(', ')}
+            </p>
+          )}
+        </section>
+      )}
 
       {showFeedback && (
         <section className="feedback-section" aria-label="Session feedback">

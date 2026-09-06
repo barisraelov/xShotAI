@@ -18,7 +18,16 @@ with court coordinates) so a past session re-opens exactly like a fresh one.
 import uuid
 from datetime import datetime, timezone
 
-from sqlalchemy import Column, DateTime, Float, ForeignKey, Integer, String
+from sqlalchemy import (
+    Boolean,
+    Column,
+    DateTime,
+    Float,
+    ForeignKey,
+    Integer,
+    String,
+    UniqueConstraint,
+)
 from sqlalchemy.dialects.postgresql import JSONB
 
 from db import Base
@@ -66,3 +75,38 @@ class Session(Base):
     accuracy_pct = Column(Float, nullable=False, default=0.0)
 
     result       = Column(JSONB, nullable=False)
+
+
+class LiveSession(Base):
+    """In-progress or completed Live camera session. History `Session` rows are
+    created only at completion so active Live work never appears as history."""
+
+    __tablename__ = "live_sessions"
+
+    id = Column(String, primary_key=True, default=_uuid_str)
+    user_id = Column(String, ForeignKey("users.id"), nullable=False, index=True)
+    status = Column(String, nullable=False, default="prepare")
+    generation = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    started_at = Column(DateTime(timezone=True), nullable=True)
+    completed_at = Column(DateTime(timezone=True), nullable=True)
+    history_session_id = Column(String, ForeignKey("sessions.id"), nullable=True)
+    result = Column(JSONB, nullable=True)
+
+
+class LiveShot(Base):
+    __tablename__ = "live_shots"
+    __table_args__ = (
+        UniqueConstraint("live_session_id", "shot_id", name="uq_live_shot_id"),
+    )
+
+    id = Column(String, primary_key=True, default=_uuid_str)
+    live_session_id = Column(
+        String, ForeignKey("live_sessions.id"), nullable=False, index=True
+    )
+    shot_id = Column(String, nullable=False)
+    result = Column(String, nullable=False)
+    decision_frame = Column(Integer, nullable=True)
+    payload = Column(JSONB, nullable=False)
+    degraded = Column(Boolean, nullable=False, default=False)
+    created_at = Column(DateTime(timezone=True), nullable=False, default=_utcnow)

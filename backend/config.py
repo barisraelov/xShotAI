@@ -15,8 +15,10 @@ pydantic-settings, with development-friendly fallbacks.
   JWT_ALGORITHM                 — signing algorithm (HS256)
   ACCESS_TOKEN_EXPIRE_MINUTES   — access-token lifetime (default 24h)
   CORS_ORIGINS                  — comma-separated allowed origins, or "*" to allow
-                                  any origin (default; convenient for the first
-                                  cloud deploy, tighten later).
+                                  any origin for HTTP CORS (default). WebSocket /live
+                                  never treats "*" as allow-all: it uses this list
+                                  plus local Vite/prototype origins, and rejects a
+                                  missing or unknown Origin.
   RAILWAY_GIT_* / BUILD_SHA     — deploy fingerprint. Railway injects
                                   RAILWAY_GIT_COMMIT_SHA / _BRANCH / _COMMIT_MESSAGE
                                   into the running container automatically; set
@@ -32,6 +34,14 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 # Evaluated once per process. Only used when SECRET_KEY is not in the environment.
 _DEV_SECRET_FALLBACK = os.getenv("SECRET_KEY") or "dev-only-" + secrets.token_urlsafe(48)
+
+# Always merged into a tightened CORS list and into WebSocket Origin checks.
+LOCAL_DEV_ORIGINS = (
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+)
 
 
 class Settings(BaseSettings):
@@ -77,6 +87,16 @@ class Settings(BaseSettings):
         if raw in ("", "*"):
             return ["*"]
         return [origin.strip() for origin in raw.split(",") if origin.strip()]
+
+    @property
+    def websocket_allowed_origins(self) -> list[str]:
+        """Origins allowed for /live. '*' is never treated as allow-all."""
+        extra = [
+            origin.strip().rstrip("/")
+            for origin in self.cors_origins_list
+            if origin.strip() and origin.strip() != "*"
+        ]
+        return sorted(set(extra) | {item.rstrip("/") for item in LOCAL_DEV_ORIGINS})
 
 
 settings = Settings()

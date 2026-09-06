@@ -40,6 +40,16 @@ body {
   padding-bottom: 24px;
 }
 
+.app-frame.live-mode {
+  max-width: none;
+  width: 100%;
+  min-height: 100dvh;
+  height: 100dvh;
+  padding: 0;
+  overflow: hidden;
+  background: #000;
+}
+
 /* ── Top bar ── */
 .top-bar {
   display: flex;

@@ -12,6 +12,7 @@ export default defineConfig({
       '/auth': 'http://localhost:8000',
       '/users': 'http://localhost:8000',
       '/sessions': 'http://localhost:8000',
+      '/live': { target: 'http://localhost:8000', ws: true },
     },
   },
 })
