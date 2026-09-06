@@ -47,3 +47,5 @@ backend/test_videos/input/*.mkv
 
 # YOLO model weights (large binary — download separately)
 backend/*.pt
+!backend/best.pt
+!backend/yolov8n.pt
