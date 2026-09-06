@@ -1,12 +1,13 @@
-/** Live API / WebSocket configuration (FIX-05 / PATCH-04 / LIVE-25). Staging-only. */
+/** Live API / WebSocket configuration (FIX-05 / PATCH-04 / LIVE-25). */
 
 export const PRODUCTION_API_HOSTS = ['xshotai.up.railway.app']
+export const PRODUCTION_API_ORIGIN = 'https://xshotai.up.railway.app'
 
 export const LIVE_CONFIG_MESSAGES = {
   missing_vite_api_url:
     'Live is not configured: missing VITE_API_URL. Preview must point at Staging, never Production.',
   production_api_blocked:
-    'Live is blocked: the Production API is not allowed. Set VITE_API_URL to an explicit Staging origin.',
+    'Live is blocked: the Production API is not allowed. Set VITE_API_URL to Staging, or opt in on Vercel Production with VITE_ENABLE_LIVE_PRODUCTION=true.',
   preview_points_at_production:
     'Live is blocked: this Preview build points at the Production API. Use the Staging URL.',
 }
@@ -33,6 +34,26 @@ export function isProductionApiUrl(url) {
   return PRODUCTION_API_HOSTS.some(h => lower.includes(h))
 }
 
+export function isLiveProductionOptIn(value) {
+  return String(value ?? '').trim().toLowerCase() === 'true'
+}
+
+export function isExactProductionApiUrl(url) {
+  return String(url || '').trim().replace(/\/$/, '').toLowerCase() === PRODUCTION_API_ORIGIN
+}
+
+export function allowsProductionLive({
+  viteApiUrl,
+  enableLiveProduction,
+  vercelEnv,
+} = {}) {
+  return (
+    isLiveProductionOptIn(enableLiveProduction)
+    && String(vercelEnv || '').toLowerCase() === 'production'
+    && isExactProductionApiUrl(viteApiUrl)
+  )
+}
+
 export function isProductionWsUrl(url) {
   return isProductionApiUrl(url)
 }
@@ -49,7 +70,9 @@ export function httpUrlToWs(apiBase) {
 }
 
 export function isPreviewEnv({ vercelEnv, pageHost, mode } = {}) {
-  if (String(vercelEnv || '').toLowerCase() === 'preview') return true
+  const ve = String(vercelEnv || '').toLowerCase()
+  if (ve === 'production') return false
+  if (ve === 'preview') return true
   const host = String(pageHost || '')
   if (/\.vercel\.app$/i.test(host)) return true
   return String(mode || '') === 'preview'
@@ -61,12 +84,18 @@ export function resolveLiveConfig({
   dev,
   vercelEnv,
   pageHost,
+  enableLiveProduction,
 } = {}) {
   const raw = String(viteApiUrl ?? '').trim()
   const preview = isPreviewEnv({ vercelEnv, pageHost, mode })
   const productionLike = mode === 'production' || preview
+  const productionLive = allowsProductionLive({
+    viteApiUrl: raw,
+    enableLiveProduction,
+    vercelEnv,
+  })
 
-  if (raw && isProductionApiUrl(raw)) {
+  if (raw && isProductionApiUrl(raw) && !productionLive) {
     return {
       ok: false,
       blocked: true,
@@ -110,7 +139,7 @@ export function resolveLiveConfig({
   }
 
   const wsUrl = httpUrlToWs(raw)
-  if (wsUrl && isProductionWsUrl(wsUrl)) {
+  if (wsUrl && isProductionWsUrl(wsUrl) && !productionLive) {
     return {
       ok: false,
       blocked: true,
@@ -124,7 +153,7 @@ export function resolveLiveConfig({
   return {
     ok: true,
     blocked: false,
-    reason: 'configured',
+    reason: productionLive ? 'production_opt_in' : 'configured',
     apiBase: raw.replace(/\/$/, ''),
     wsUrl,
     usePageHost: false,
@@ -154,6 +183,7 @@ export function getLiveRuntimeConfig() {
     dev: env.DEV,
     vercelEnv: env.VITE_VERCEL_ENV,
     pageHost,
+    enableLiveProduction: env.VITE_ENABLE_LIVE_PRODUCTION,
   })
 }
 

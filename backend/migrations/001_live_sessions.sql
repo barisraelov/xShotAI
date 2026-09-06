@@ -1,7 +1,8 @@
 -- Live session schema (LIVE-18).
--- Run ONLY against a dedicated Staging database.
--- Do NOT run against Production.
--- Safe alternative on an empty Staging DB: SQLAlchemy create_all on boot.
+-- Additive only: CREATE TABLE IF NOT EXISTS + indexes + unique/FK.
+-- No DROP, no ALTER of existing users/sessions/jobs tables.
+-- Production: run once after a restore-point backup. Do not use create_all
+-- as a substitute for this file.
 
 CREATE TABLE IF NOT EXISTS live_sessions (
     id VARCHAR PRIMARY KEY,

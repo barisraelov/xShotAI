@@ -152,3 +152,72 @@ describe('PATCH-04 Live blocks Production in every environment', () => {
     assert.doesNotMatch(auth, /PRODUCTION_API_HOSTS/)
   })
 })
+
+describe('Production Live opt-in (VITE_ENABLE_LIVE_PRODUCTION)', () => {
+  const productionUrl = 'https://xshotai.up.railway.app'
+
+  it('allows Production Live only with explicit opt-in on Vercel Production', () => {
+    const cfg = resolveLiveConfig({
+      viteApiUrl: productionUrl,
+      mode: 'production',
+      vercelEnv: 'production',
+      pageHost: 'x-shot-ai.vercel.app',
+      enableLiveProduction: 'true',
+    })
+    assert.equal(cfg.ok, true)
+    assert.equal(cfg.blocked, false)
+    assert.equal(cfg.reason, 'production_opt_in')
+    assert.equal(cfg.apiBase, productionUrl)
+    assert.equal(cfg.wsUrl, 'wss://xshotai.up.railway.app/live')
+  })
+
+  it('still blocks Production without the opt-in flag', () => {
+    const cfg = resolveLiveConfig({
+      viteApiUrl: productionUrl,
+      mode: 'production',
+      vercelEnv: 'production',
+      pageHost: 'x-shot-ai.vercel.app',
+      enableLiveProduction: '',
+    })
+    assert.equal(cfg.blocked, true)
+    assert.equal(cfg.wsUrl, null)
+  })
+
+  it('still blocks Preview even if the opt-in flag is set', () => {
+    const cfg = resolveLiveConfig({
+      viteApiUrl: productionUrl,
+      mode: 'production',
+      vercelEnv: 'preview',
+      pageHost: 'xshot-live-staging.vercel.app',
+      enableLiveProduction: 'true',
+    })
+    assert.equal(cfg.blocked, true)
+    assert.equal(cfg.wsUrl, null)
+  })
+
+  it('rejects a non-exact Production URL even with opt-in', () => {
+    const cfg = resolveLiveConfig({
+      viteApiUrl: 'https://xshotai.up.railway.app/extra',
+      mode: 'production',
+      vercelEnv: 'production',
+      pageHost: 'x-shot-ai.vercel.app',
+      enableLiveProduction: 'true',
+    })
+    assert.equal(cfg.blocked, true)
+    assert.equal(cfg.wsUrl, null)
+  })
+
+  it('keeps Staging on the Staging backend without opt-in', () => {
+    const cfg = resolveLiveConfig({
+      viteApiUrl: 'https://xshot-staging-backend-production.up.railway.app',
+      mode: 'production',
+      vercelEnv: 'preview',
+      pageHost: 'xshot-live-staging.vercel.app',
+    })
+    assert.equal(cfg.ok, true)
+    assert.equal(
+      cfg.wsUrl,
+      'wss://xshot-staging-backend-production.up.railway.app/live',
+    )
+  })
+})
