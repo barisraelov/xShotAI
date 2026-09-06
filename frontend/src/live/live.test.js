@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { describe, it } from 'node:test'
-import { readFileSync } from 'node:fs'
+import { readFileSync, statSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 
@@ -11,6 +11,7 @@ import {
   delayedBannerText,
   createPlayedSet,
   playDecisionSound,
+  playGoSound,
   DELAYED_MS,
 } from './audio.js'
 
@@ -94,6 +95,115 @@ describe('LIVE-20 / LIVE-21 audio', () => {
     })
     assert.equal(out.muted, true)
     assert.equal(played.has('s002'), true)
+  })
+})
+
+describe('Live GO / Make / Miss cues', () => {
+  const soundsDir = join(here, '..', '..', 'public', 'sounds')
+
+  function clip(label) {
+    return {
+      currentTime: 1,
+      plays: 0,
+      play() {
+        this.plays += 1
+        this.currentTime = 0
+        return Promise.resolve()
+      },
+      label,
+    }
+  }
+
+  it('GO cue plays go.wav once and does not touch Make/Miss', () => {
+    const sounds = { go: clip('go'), make: clip('make'), miss: clip('miss'), delayed: clip('delayed') }
+    const first = playGoSound(sounds, { muted: false })
+    const second = playGoSound(sounds, { muted: false })
+    assert.equal(first.played, true)
+    assert.equal(second.played, true)
+    assert.equal(sounds.go.plays, 2)
+    assert.equal(sounds.make.plays, 0)
+    assert.equal(sounds.miss.plays, 0)
+  })
+
+  it('does not play GO when muted', () => {
+    const sounds = { go: clip('go'), make: clip('make'), miss: clip('miss') }
+    const out = playGoSound(sounds, { muted: true })
+    assert.equal(out.played, false)
+    assert.equal(out.muted, true)
+    assert.equal(sounds.go.plays, 0)
+  })
+
+  it('GO audio failure does not throw', () => {
+    const sounds = {
+      go: { currentTime: 0, play() { throw new Error('audio failed') } },
+    }
+    assert.doesNotThrow(() => playGoSound(sounds, { muted: false }))
+    assert.equal(playGoSound(null, { muted: false }).played, false)
+  })
+
+  it('Make plays only the make (swish) clip', () => {
+    const sounds = { go: clip('go'), make: clip('make'), miss: clip('miss'), delayed: clip('delayed') }
+    const played = createPlayedSet('m1', { getItem() { return null }, setItem() {} })
+    playDecisionSound(sounds, {
+      shotId: 's010', result: 'made', decidedAtUnixMs: Date.now(), muted: false, played, nowMs: Date.now(),
+    })
+    assert.equal(sounds.make.plays, 1)
+    assert.equal(sounds.miss.plays, 0)
+    assert.equal(sounds.go.plays, 0)
+    assert.equal(sounds.delayed.plays, 0)
+  })
+
+  it('Miss plays only the miss (buzzer) clip', () => {
+    const sounds = { go: clip('go'), make: clip('make'), miss: clip('miss'), delayed: clip('delayed') }
+    const played = createPlayedSet('m2', { getItem() { return null }, setItem() {} })
+    playDecisionSound(sounds, {
+      shotId: 's011', result: 'missed', decidedAtUnixMs: Date.now(), muted: false, played, nowMs: Date.now(),
+    })
+    assert.equal(sounds.miss.plays, 1)
+    assert.equal(sounds.make.plays, 0)
+    assert.equal(sounds.go.plays, 0)
+  })
+
+  it('Mute silences GO, Make, and Miss', () => {
+    const sounds = {
+      go: clip('go'),
+      make: { currentTime: 0, play() { throw new Error('make') } },
+      miss: { currentTime: 0, play() { throw new Error('miss') } },
+      delayed: { currentTime: 0, play() { throw new Error('delayed') } },
+    }
+    const played = createPlayedSet('m3', { getItem() { return null }, setItem() {} })
+    assert.equal(playGoSound(sounds, { muted: true }).muted, true)
+    const make = playDecisionSound(sounds, {
+      shotId: 's012', result: 'made', decidedAtUnixMs: Date.now(), muted: true, played, nowMs: Date.now(),
+    })
+    const miss = playDecisionSound(sounds, {
+      shotId: 's013', result: 'missed', decidedAtUnixMs: Date.now(), muted: true, played, nowMs: Date.now(),
+    })
+    assert.equal(make.muted, true)
+    assert.equal(miss.muted, true)
+    assert.equal(sounds.go.plays, 0)
+  })
+
+  it('GO overlay in Live.jsx plays only when countdown is GO', () => {
+    const jsx = readFileSync(join(here, '..', 'screens', 'Live.jsx'), 'utf8')
+    assert.match(jsx, /playGoSound/)
+    assert.match(jsx, /countdown !== 'GO'/)
+    const audio = readFileSync(join(here, 'audio.js'), 'utf8')
+    assert.match(audio, /new Audio\('\/sounds\/go\.wav'\)/)
+    assert.match(audio, /new Audio\('\/sounds\/make\.wav'\)/)
+    assert.match(audio, /new Audio\('\/sounds\/miss\.wav'\)/)
+  })
+
+  it('sound files exist, are non-empty, and delayed.wav is unchanged', () => {
+    const go = statSync(join(soundsDir, 'go.wav'))
+    const make = statSync(join(soundsDir, 'make.wav'))
+    const miss = statSync(join(soundsDir, 'miss.wav'))
+    const delayed = statSync(join(soundsDir, 'delayed.wav'))
+    assert.equal(go.size, 6218)
+    assert.ok(make.size > 1000)
+    assert.ok(miss.size > 1000)
+    assert.equal(delayed.size, 11508)
+    assert.notEqual(make.size, go.size)
   })
 })
 

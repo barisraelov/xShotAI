@@ -6,6 +6,7 @@ import {
   delayedBannerText,
   loadSounds,
   playDecisionSound,
+  playGoSound,
   unlockSounds,
   createPlayedSet,
 } from '../live/audio'
@@ -124,6 +125,13 @@ export default function Live({ navigate }) {
   useEffect(() => {
     soundsRef.current = loadSounds()
   }, [])
+
+  useEffect(() => {
+    if (countdown !== 'GO') return
+    try {
+      playGoSound(soundsRef.current, { muted: mutedRef.current })
+    } catch { /* never block countdown or GO */ }
+  }, [countdown])
 
   useEffect(() => {
     if (!isAuthed()) {

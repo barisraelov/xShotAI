@@ -35,13 +35,14 @@ export function createPlayedSet(liveSessionId, storage) {
 }
 
 export function loadSounds() {
+  const go = new Audio('/sounds/go.wav')
   const make = new Audio('/sounds/make.wav')
   const miss = new Audio('/sounds/miss.wav')
   const delayed = new Audio('/sounds/delayed.wav')
-  for (const a of [make, miss, delayed]) {
+  for (const a of [go, make, miss, delayed]) {
     a.preload = 'auto'
   }
-  return { make, miss, delayed }
+  return { go, make, miss, delayed }
 }
 
 export async function unlockSounds(sounds) {
@@ -58,6 +59,28 @@ export async function unlockSounds(sounds) {
   }
 }
 
+export function playClip(audio, { muted } = {}) {
+  if (muted || !audio) {
+    return { played: false, muted: !!muted }
+  }
+  try {
+    audio.currentTime = 0
+    const pending = audio.play()
+    if (pending && typeof pending.catch === 'function') pending.catch(() => {})
+    return { played: true, muted: false }
+  } catch {
+    return { played: false, muted: false, error: true }
+  }
+}
+
+export function playGoSound(sounds, { muted } = {}) {
+  try {
+    return playClip(sounds && sounds.go, { muted })
+  } catch {
+    return { played: false, muted: !!muted, error: true }
+  }
+}
+
 export function playDecisionSound(sounds, { shotId, result, decidedAtUnixMs, muted, played, nowMs }) {
   if (!shotId || played.has(shotId)) {
     return { played: false, kind: null, already: true }
@@ -67,10 +90,11 @@ export function playDecisionSound(sounds, { shotId, result, decidedAtUnixMs, mut
   if (muted) {
     return { played: false, kind, already: false, muted: true }
   }
-  const clip = kind === 'delayed' ? sounds.delayed : (result === 'made' ? sounds.make : sounds.miss)
+  const clip = kind === 'delayed'
+    ? sounds && sounds.delayed
+    : (result === 'made' ? sounds && sounds.make : sounds && sounds.miss)
   try {
-    clip.currentTime = 0
-    clip.play().catch(() => {})
+    playClip(clip, { muted: false })
   } catch { /* ignore */ }
   return { played: true, kind, already: false, muted: false }
 }

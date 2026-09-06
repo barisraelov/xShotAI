@@ -567,6 +567,32 @@ describe('manual Start countdown vs reconnect skip', () => {
     assert.equal(h.session.startPath, 'reconnect_reactivation')
     assert.equal(h.session.phase, 'live')
   })
+
+  it('shows GO once before sending go, and never before the GO overlay', async () => {
+    const h = harness()
+    h.session.handlePrepared({})
+    await h.session.requestStart()
+    assert.equal(h.countdowns.includes('GO'), false)
+    assert.equal(h.sent.filter(m => m.type === 'go').length, 0)
+    h.timers.advance(COUNTDOWN_STEP_MS * 3)
+    assert.equal(h.countdowns.at(-1), 'GO')
+    assert.equal(h.countdowns.filter(v => v === 'GO').length, 1)
+    assert.equal(h.sent.filter(m => m.type === 'go').length, 0)
+    h.timers.advance(COUNTDOWN_STEP_MS)
+    assert.equal(h.sent.filter(m => m.type === 'go').length, 1)
+  })
+
+  it('reconnect of an active session does not show GO again', async () => {
+    const h = harness()
+    await startThroughCountdown(h)
+    h.session.handleGoAck()
+    const gos = h.countdowns.filter(v => v === 'GO').length
+    assert.equal(gos, 1)
+    h.session.handleDisconnect()
+    h.session.handlePrepared({ resumed: true })
+    h.session.handlePrepared({ resumed: false })
+    assert.equal(h.countdowns.filter(v => v === 'GO').length, gos)
+  })
 })
 
 
