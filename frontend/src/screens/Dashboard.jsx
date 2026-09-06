@@ -1,15 +1,68 @@
+import { useEffect, useState } from 'react'
 import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
+import { isAuthed, logout } from '../auth'
+import { getSession, getSessions } from '../api'
 import './Dashboard.css'
+
+// e.g. "Sep 4, 2026 · 3:42 PM" — date + time, both in the viewer's locale and
+// local timezone (Date parses the UTC `created_at` and formats it locally).
+function formatDate(iso) {
+  const d = new Date(iso)
+  if (isNaN(d)) return ''
+  const date = d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${date} · ${time}`
+}
 
 export default function Dashboard({ navigate, result }) {
   const summary = result?.summary ?? null
 
+  const [sessions, setSessions] = useState([])
+  const [histLoading, setHistLoading] = useState(false)
+  const [histError, setHistError] = useState(null)   // list load — shown as a muted note
+  const [openError, setOpenError] = useState(null)   // row click — actionable, shown prominently
+  const [openingId, setOpeningId] = useState(null)
+
+  useEffect(() => {
+    if (!isAuthed()) return
+    let cancelled = false
+    setHistLoading(true)
+    setHistError(null)
+    getSessions()
+      .then(list => { if (!cancelled) setSessions(Array.isArray(list) ? list : []) })
+      .catch(err => { if (!cancelled) setHistError(err.message) })
+      .finally(() => { if (!cancelled) setHistLoading(false) })
+    return () => { cancelled = true }
+  }, [])
+
+  function handleLogout() {
+    logout()
+    navigate('welcome')
+  }
+
+  async function openSession(id) {
+    if (openingId) return
+    setOpeningId(id)
+    setOpenError(null)
+    try {
+      const data = await getSession(id)
+      // Same shape a fresh analysis produces — session/heatmap screens just work.
+      navigate('session', { result: data.result, jobId: data.id, error: null })
+    } catch (err) {
+      setOpenError("Couldn't open that session. Please try again.")
+      setOpeningId(null)
+    }
+  }
+
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
         <div className="top-actions">
+          {isAuthed() && (
+            <button className="logout-btn" onClick={handleLogout}>Log out</button>
+          )}
           <div className="avatar" />
         </div>
       </div>
@@ -47,8 +100,46 @@ export default function Dashboard({ navigate, result }) {
         </>
       )}
 
-      {!summary && (
+      {!summary && !isAuthed() && (
         <p className="dashboard-hint">Upload a video to see your shot analysis here.</p>
+      )}
+
+      {isAuthed() && (
+        <>
+          <div className="section-title">Past sessions</div>
+
+          {histLoading && <p className="dashboard-hint">Loading history…</p>}
+          {openError && <div className="error-box">{openError}</div>}
+
+          {!histLoading && sessions.length === 0 && (
+            <p className="dashboard-hint">
+              {histError
+                ? "Session history isn't available right now."
+                : 'No past sessions yet — analyze a video to start your history.'}
+            </p>
+          )}
+
+          {sessions.length > 0 && (
+            <ul className="history-list">
+              {sessions.map(s => (
+                <li key={s.id}>
+                  <button
+                    className="history-row"
+                    onClick={() => openSession(s.id)}
+                    disabled={!!openingId}
+                  >
+                    <span className="history-date">{formatDate(s.created_at)}</span>
+                    <span className="history-stat">
+                      {s.made}/{s.total_shots}
+                      <span className="history-pct"> · {Math.round(s.accuracy_pct)}%</span>
+                    </span>
+                    <span className="history-go">{openingId === s.id ? '…' : '→'}</span>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+        </>
       )}
 
       <BottomNav active="dashboard" navigate={navigate} />

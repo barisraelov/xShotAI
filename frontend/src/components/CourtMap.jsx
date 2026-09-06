@@ -1,10 +1,15 @@
 import './CourtMap.css'
 
+// The backend's court_mapper.classify_zone() only ever produces these 4
+// polygon ids (two_left/two_right/three_left/three_right) — NOT the 11-zone
+// taxonomy in analyze_result_spec.md, which is aspirational/demo-only until
+// zone_classifier.py exists. Keep this list matching the real classifier
+// output so zone_aggregates from a live analysis actually lights up.
 const ZONES = [
-  { id: 'three_left',  label: '3pt Left',  svgCx: 22, svgCy: 24 },
-  { id: 'three_right', label: '3pt Right', svgCx: 78, svgCy: 24 },
-  { id: 'two_left',    label: '2pt Left',  svgCx: 29, svgCy: 44 },
-  { id: 'two_right',   label: '2pt Right', svgCx: 71, svgCy: 44 },
+  { id: 'three_left',  svgCx: 22, svgCy: 24 },
+  { id: 'three_right', svgCx: 78, svgCy: 24 },
+  { id: 'two_left',    svgCx: 29, svgCy: 44 },
+  { id: 'two_right',   svgCx: 71, svgCy: 44 },
 ]
 
 // Zone fill paths (viewBox "0 0 100 60", hoop at cx=50 cy=52)
@@ -23,8 +28,20 @@ function zoneColor(accuracy, attempts) {
   return 'rgba(248, 113, 113, 0.20)'
 }
 
-export default function CourtMap({ zoneAggregates }) {
+// CourtCoord -> percentage position within .court-container (which stretches
+// the 100x60 SVG viewBox to fill it via preserveAspectRatio="none", so a
+// viewBox unit maps 1:1 to a container percentage point).
+// x: 0 = left sideline -> 1 = right sideline, mapped onto the court rect (x 4..96).
+// y: 0 = near the hoop (svg y=52) -> 1 = far end / half-court (svg y=4).
+function courtPositionPct({ x, y }) {
+  const left = 4 + Math.min(Math.max(x, 0), 1) * 92
+  const top  = (52 - Math.min(Math.max(y, 0), 1) * 48) / 60 * 100
+  return { left: `${left}%`, top: `${top}%` }
+}
+
+export default function CourtMap({ zoneAggregates, shotPoints }) {
   const byId = Object.fromEntries((zoneAggregates ?? []).map(z => [z.polygon_id, z]))
+  const dots = (shotPoints ?? []).filter(s => s?.origin?.court)
 
   return (
     <div className="court-container">
@@ -38,12 +55,10 @@ export default function CourtMap({ zoneAggregates }) {
         {ZONES.map(z => {
           const agg = byId[z.id]
           return (
-            <path
-              key={z.id}
-              d={ZONE_PATHS[z.id]}
-              fill={zoneColor(agg?.accuracy_pct, agg?.attempts)}
-              stroke="none"
-            />
+            <path key={z.id} d={ZONE_PATHS[z.id]}
+              fill={zoneColor(agg?.accuracy_pct, agg?.attempts)} stroke="none">
+              <title>{agg?.label ?? z.id}</title>
+            </path>
           )
         })}
 
@@ -67,7 +82,7 @@ export default function CourtMap({ zoneAggregates }) {
         <path d="M16 38 Q50 6 84 38"
           fill="none" stroke="rgba(255,255,255,0.18)" strokeWidth="0.8" />
 
-        {/* Zone stats labels */}
+        {/* Zone stats labels — percentage + made/attempts, e.g. "33%" / "1/3" */}
         {ZONES.map(z => {
           const agg = byId[z.id]
           if (!agg?.attempts) return (
@@ -92,6 +107,16 @@ export default function CourtMap({ zoneAggregates }) {
           )
         })}
       </svg>
+
+      {/* Individual shot markers — only for shots with a mapped court position. */}
+      {dots.map((s, i) => (
+        <div
+          key={s.shot_id ?? i}
+          className={`shot-dot ${s.result === 'made' ? 'dot-made' : 'dot-missed'}`}
+          style={courtPositionPct(s.origin.court)}
+          title={`${s.shot_id ?? `Shot ${i + 1}`} — ${s.result}`}
+        />
+      ))}
     </div>
   )
 }

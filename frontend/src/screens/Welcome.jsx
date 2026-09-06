@@ -5,7 +5,7 @@ export default function Welcome({ navigate }) {
   return (
     <div className="screen-enter welcome">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
       </div>
 
       <div className="welcome-hero">
@@ -28,8 +28,8 @@ export default function Welcome({ navigate }) {
       </ul>
 
       <div className="cta-row">
-        <button className="btn" onClick={() => navigate('dashboard')}>Log In</button>
-        <button className="btn btn-primary" onClick={() => navigate('dashboard')}>Sign Up</button>
+        <button className="btn" onClick={() => navigate('login')}>Log In</button>
+        <button className="btn btn-primary" onClick={() => navigate('register')}>Sign Up</button>
       </div>
 
       <p className="slogan">Track · Improve · <b>Dominate</b></p>

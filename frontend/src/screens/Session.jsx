@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
+import CourtMap from '../components/CourtMap'
 import VisualFeedback, { VisualSessionSummary } from '../components/VisualFeedback'
 import './Session.css'
 
@@ -135,8 +136,7 @@ export default function Session({ navigate, result }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <Logo />
-        <button className="icon-btn" onClick={() => navigate('dashboard')}>☰</button>
+        <Logo onClick={() => navigate('dashboard')} />
       </div>
 
       <section className="session-summary-section" aria-label="Session summary">
@@ -179,6 +179,13 @@ export default function Session({ navigate, result }) {
         )}
 
         <VisualSessionSummary result={result} />
+
+        {/* Zone-level chart only — individual shot markers are omitted here
+            until court-mapped shot coordinates are more reliable. */}
+        <section className="court-chart-section" aria-label="Shot chart">
+          <div className="court-chart-title">Shot chart</div>
+          <CourtMap zoneAggregates={zone_aggregates} />
+        </section>
 
         {weak && (
           <div className="tip-box">

@@ -18,7 +18,7 @@ export default function Heatmap({ navigate, result }) {
   return (
     <div className="screen-enter">
       <div className="top-bar">
-        <Logo />
+        <Logo onClick={() => navigate('dashboard')} />
         <button className="icon-btn" onClick={() => navigate('session')}>←</button>
       </div>
 

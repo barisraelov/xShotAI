@@ -1,0 +1,81 @@
+/* Shared by Login.jsx and Register.jsx */
+
+.auth-screen { padding: 8px 20px 28px; }
+
+.auth-screen .auth-head {
+  padding: 20px 0 6px;
+}
+.auth-screen .auth-head h1 {
+  font-size: 1.5rem;
+  font-weight: 700;
+  line-height: 1.2;
+}
+.auth-screen .auth-head p {
+  color: var(--text-muted);
+  font-size: 0.92rem;
+  margin-top: 6px;
+}
+
+.auth-form {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding-top: 18px;
+}
+
+.auth-field { display: flex; flex-direction: column; gap: 6px; }
+
+.auth-field label {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.auth-field input {
+  width: 100%;
+  padding: 13px 14px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 12px;
+  color: var(--text);
+  font-size: 1rem;
+  font-family: inherit;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.auth-field input::placeholder { color: var(--text-muted); }
+.auth-field input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-dim);
+}
+.auth-field input:disabled { opacity: 0.55; }
+
+.auth-form .btn { margin-top: 6px; }
+
+.auth-alt {
+  margin-top: 18px;
+  text-align: center;
+  font-size: 0.9rem;
+  color: var(--text-muted);
+}
+.auth-link {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--orange);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.auth-back {
+  margin: 10px 0 0;
+  background: none;
+  border: none;
+  padding: 6px 0;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+}

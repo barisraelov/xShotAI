@@ -8,10 +8,10 @@ export default function BottomNav({ active, navigate }) {
         🏠 Dashboard
       </button>
       <button
-        className={active === 'heatmap' ? 'active' : ''}
-        onClick={() => navigate('heatmap')}
+        className={active === 'statistics' ? 'active' : ''}
+        onClick={() => navigate('statistics')}
       >
-        🔥 Shot map
+        📊 Statistics
       </button>
       <button
         className={active === 'progress' ? 'active' : ''}

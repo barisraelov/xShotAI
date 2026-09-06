@@ -57,6 +57,19 @@ body {
   letter-spacing: -0.02em;
 }
 
+/* Clickable variant (Logo receives an onClick) — reset button chrome. */
+.logo-link {
+  cursor: pointer;
+  background: none;
+  border: none;
+  padding: 0;
+  margin: 0;
+  font: inherit;
+  color: inherit;
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+}
+
 .logo-mark {
   width: 32px;
   height: 32px;
@@ -180,10 +193,24 @@ body {
   padding: 12px;
   border: 1px solid rgba(255, 255, 255, 0.06);
   min-height: 72px;
+  /* Pin the value to the bottom regardless of whether the label wraps to one
+     or two lines, so values stay on one baseline across cards in a row. */
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
 }
 
 .stat-label { font-size: 0.78rem; color: var(--text-muted); margin-bottom: 4px; }
 .stat-value { font-size: 1.4rem; font-weight: 700; }
+
+/* 3-up variant (e.g. Statistics screen) — same card, tighter columns. */
+.stat-grid-3 {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  padding: 0 20px 20px;
+}
+.stat-grid-3 .stat-value { font-size: 1.15rem; }
 
 /* ── Tip box ── */
 .tip-box {

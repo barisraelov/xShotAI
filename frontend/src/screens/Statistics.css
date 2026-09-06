@@ -1,0 +1,44 @@
+/* ── Best Session highlight card ── */
+.best-session-card {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: calc(100% - 40px);
+  margin: 0 20px 20px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 107, 44, 0.35);
+  border-left: 4px solid var(--orange);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.best-session-card:hover {
+  border-color: var(--orange);
+  background: var(--bg-elevated);
+}
+.best-session-card:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.best-session-main {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+.best-session-date { font-size: 0.82rem; color: var(--text-muted); }
+.best-session-stat { font-size: 1.15rem; font-weight: 700; }
+.best-session-pct { color: var(--orange); }
+
+.best-session-go {
+  flex-shrink: 0;
+  color: var(--orange);
+  font-weight: 700;
+  font-size: 0.85rem;
+  white-space: nowrap;
+}

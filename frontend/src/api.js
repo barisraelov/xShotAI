@@ -1,22 +1,65 @@
 /**
- * API wrappers — all calls go through Vite proxy to localhost:8000
+ * API wrappers.
  *
- * POST /analyze  (multipart)  → { job_id }
- * GET  /jobs/:id              → { status } | AnalyzeResult
+ * Base URL comes from VITE_API_URL (see auth.js / .env). When it's empty the
+ * paths stay relative and go through the Vite dev proxy to localhost:8000.
+ *
+ * POST /analyze            (multipart) → { job_id }   — sends Bearer token if logged in
+ * GET  /jobs/:id                       → { status } | AnalyzeResult
+ * GET  /sessions                       → [SessionSummary]  (auth)
+ * GET  /sessions/:id                   → SessionDetail     (auth)
  */
+
+import { API_BASE, authHeaders, handleUnauthorized } from './auth'
+
+async function authedGet(path, label, { notFoundOk = false } = {}) {
+  const res = await fetch(`${API_BASE}${path}`, { headers: { ...authHeaders() } })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired — please log in again') }
+  // A 404 on a collection endpoint means "this backend build doesn't expose it
+  // yet" (deploy lag) — treat as no data rather than a hard error.
+  if (res.status === 404 && notFoundOk) {
+    console.warn(`${label}: ${API_BASE}${path} returned 404 — treating as empty`)
+    return null
+  }
+  if (!res.ok) throw new Error(`${label} failed: ${res.status}`)
+  return res.json()
+}
 
 export async function postAnalyze(file, calibrationPoints = null, fail = false) {
   const form = new FormData()
   form.append('video', file)
   if (calibrationPoints != null) form.append('calibration_points', calibrationPoints)
   if (fail) form.append('fail', '1')
-  const res = await fetch('/analyze', { method: 'POST', body: form })
+
+  // No explicit Content-Type — the browser sets the multipart boundary itself.
+  const res = await fetch(`${API_BASE}/analyze`, {
+    method: 'POST',
+    headers: { ...authHeaders() },
+    body: form,
+  })
+
+  if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired — please log in again') }
   if (!res.ok) throw new Error(`Upload failed: ${res.status}`)
   return res.json() // { job_id }
 }
 
 export async function getJob(jobId) {
-  const res = await fetch(`/jobs/${jobId}`)
+  const res = await fetch(`${API_BASE}/jobs/${jobId}`, {
+    headers: { ...authHeaders() },
+  })
+  if (res.status === 401) { handleUnauthorized(); throw new Error('Session expired — please log in again') }
   if (!res.ok) throw new Error(`Poll failed: ${res.status}`)
   return res.json() // { status: "processing" } | AnalyzeResult
+}
+
+// Saved analysis history for the logged-in user.
+// Returns [] when the backend has no /sessions endpoint yet (404) or the user
+// has none — the Dashboard shows the same empty state either way.
+export async function getSessions() {
+  const list = await authedGet('/sessions', 'Load history', { notFoundOk: true })
+  return Array.isArray(list) ? list : []
+}
+
+export function getSession(sessionId) {
+  return authedGet(`/sessions/${sessionId}`, 'Load session') // { ...summary, job_id, result: AnalyzeResult }
 }

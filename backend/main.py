@@ -2,12 +2,17 @@
 xShot AI — FastAPI backend (Demo v1)
 
 Endpoints:
-  POST /analyze   (multipart: video file + optional fail flag)  → { job_id }
-  GET  /jobs/{id}                                               → status | AnalyzeResult
+  POST /analyze            (multipart: video + optional fail flag; optional Bearer) → { job_id }
+  GET  /jobs/{id}                                                → status | AnalyzeResult
+  POST /auth/register | POST /auth/login | GET /auth/me          → see routers/auth.py
+  GET  /users/me/history                                         → see routers/users.py
+
+When /analyze is called with a valid Bearer token the job is linked to that
+user; guests still work and produce jobs with user_id = NULL.
 
 Real CV path: video is saved to a temp file, processed by cv_pipeline.process_video()
-in a thread pool (asyncio.to_thread), and the result is stored in the in-memory job
-store once complete.
+in a thread pool (asyncio.to_thread), and the result is persisted to PostgreSQL
+(jobs table) once complete.
 
 Test / dev helpers:
   fail=1 form field  → stub failure path (exercises the full failed AnalyzeResult UX)
@@ -20,24 +25,29 @@ import json
 import logging
 import os
 import tempfile
-import time
 import uuid
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from typing import Optional
 
-from fastapi import BackgroundTasks, FastAPI, File, Form, UploadFile
+from fastapi import BackgroundTasks, Depends, FastAPI, File, Form, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
+from sqlalchemy.orm import Session
 
+import crud
 import cv_pipeline
+import models  # noqa: F401  — ensures Job/User are registered on Base.metadata
+from auth import get_current_user_optional
+from config import settings
 from court_mapper import CourtMapper
+from db import Base, SessionLocal, engine, get_db
 from feedback import generate_feedback
+from routers import auth as auth_router
+from routers import sessions as sessions_router
+from routers import users as users_router
 
 logger = logging.getLogger(__name__)
-
-# ── In-memory job store ────────────────────────────────────────────────────────
-# { job_id: { "status": str, "result": dict | None, "created_at": float } }
-_jobs: dict[str, dict] = {}
 
 
 # ── Result builder ─────────────────────────────────────────────────────────────
@@ -111,13 +121,20 @@ async def _simulate_failure(job_id: str) -> None:
     """Stub failure path — triggered by fail=1 form field. Exercises the full
     completed vs failed AnalyzeResult contract from the UI side."""
     await asyncio.sleep(3)
-    if job_id in _jobs:
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["result"] = {
-            "job_id": job_id,
-            "status": "failed",
-            "error":  "Stub failure — triggered by fail=1 flag (test mode only).",
-        }
+    db = SessionLocal()
+    try:
+        crud.update_job(
+            db,
+            job_id,
+            status="failed",
+            result={
+                "job_id": job_id,
+                "status": "failed",
+                "error":  "Stub failure — triggered by fail=1 flag (test mode only).",
+            },
+        )
+    finally:
+        db.close()
 
 
 async def _process_video_task(
@@ -127,9 +144,10 @@ async def _process_video_task(
 ) -> None:
     """
     Write video bytes to a temp file, run the CV pipeline in a thread pool
-    (to keep the event loop free), then store the result in the job store.
+    (to keep the event loop free), then persist the result to the jobs table.
     """
     tmp_path: Optional[str] = None
+    db = SessionLocal()
     try:
         # Persist the upload; suffix helps OpenCV pick the right decoder.
         with tempfile.NamedTemporaryFile(suffix=".mp4", delete=False) as f:
@@ -144,19 +162,29 @@ async def _process_video_task(
         )
 
         homography_list = court_mapper.homography_matrix if court_mapper else None
-        _jobs[job_id]["status"] = "completed"
-        _jobs[job_id]["result"] = _build_real_result(job_id, shot_points, homography_list)
+        result = _build_real_result(job_id, shot_points, homography_list)
+        job = crud.update_job(db, job_id, status="completed", result=result)
         logger.info("Job %s: completed — %d shots detected", job_id, len(shot_points))
+
+        # Save to the owner's history (guests have no user_id → nothing to save).
+        if job is not None and job.user_id:
+            crud.create_session(db, user_id=job.user_id, job_id=job_id, result=result)
+            logger.info("Job %s: saved to history for user %s", job_id, job.user_id)
 
     except Exception as exc:
         logger.exception("Job %s: CV pipeline error", job_id)
-        _jobs[job_id]["status"] = "failed"
-        _jobs[job_id]["result"] = {
-            "job_id": job_id,
-            "status": "failed",
-            "error":  str(exc),
-        }
+        crud.update_job(
+            db,
+            job_id,
+            status="failed",
+            result={
+                "job_id": job_id,
+                "status": "failed",
+                "error":  str(exc),
+            },
+        )
     finally:
+        db.close()
         if tmp_path and os.path.exists(tmp_path):
             try:
                 os.unlink(tmp_path)
@@ -166,24 +194,62 @@ async def _process_video_task(
 
 # ── App ────────────────────────────────────────────────────────────────────────
 
+_STARTED_AT = datetime.now(timezone.utc)
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine)
     yield
 
 
-app = FastAPI(title="xShot AI — Demo v1", lifespan=lifespan)
+app = FastAPI(
+    title="xShot AI — Demo v1",
+    version=settings.git_sha_short,  # deploy fingerprint in /openapi.json info.version
+    lifespan=lifespan,
+)
+
+# Origins come from settings.CORS_ORIGINS (default "*" for the initial cloud
+# deploy). Local dev origins — localhost:5173 (Vite) and :8080 (prototype) — are
+# always allowed so a tightened production list never breaks local work.
+_LOCAL_DEV_ORIGINS = [
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "http://localhost:8080",
+    "http://127.0.0.1:8080",
+]
+_cors_origins = settings.cors_origins_list
+if _cors_origins != ["*"]:
+    _cors_origins = sorted(set(_cors_origins) | set(_LOCAL_DEV_ORIGINS))
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",    # React dev server (npm run dev)
-        "http://127.0.0.1:5173",
-        "http://localhost:8080",    # Prototype served via xShot-prototype/serve.py
-        "http://127.0.0.1:8080",
-    ],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+app.include_router(auth_router.router)
+app.include_router(users_router.router)
+app.include_router(sessions_router.router)
+
+
+@app.get("/version")
+def version() -> dict:
+    """Deploy fingerprint — unauthenticated, for verifying which commit is live."""
+    # Enumerate paths via the OpenAPI schema, not app.routes: newer FastAPI
+    # represents include_router() results as lazy _IncludedRouter objects with
+    # no `.path`, so walking app.routes misses every router-mounted endpoint.
+    paths = sorted(app.openapi().get("paths", {}))
+    return {
+        "commit":       settings.git_sha,
+        "commit_short": settings.git_sha_short,
+        "branch":       settings.RAILWAY_GIT_BRANCH or None,
+        "message":      settings.RAILWAY_GIT_COMMIT_MESSAGE or None,
+        "started_at":   _STARTED_AT.isoformat(),
+        "routes":       paths,
+        "has_sessions": "/sessions" in paths,
+    }
 
 
 @app.post("/analyze")
@@ -192,9 +258,11 @@ async def analyze(
     video: UploadFile = File(...),
     calibration_points: Optional[str] = Form(None),  # JSON: [[u,v], ...] × 6
     fail: Optional[str] = Form(None),                # "1" or "true" → stub failure
+    db: Session = Depends(get_db),
+    current_user: Optional[models.User] = Depends(get_current_user_optional),
 ):
     job_id = f"job_{uuid.uuid4().hex[:10]}"
-    _jobs[job_id] = {"status": "processing", "result": None, "created_at": time.time()}
+    crud.create_job(db, job_id, user_id=current_user.id if current_user else None)
 
     if fail and fail.lower() in ("1", "true", "yes"):
         background_tasks.add_task(_simulate_failure, job_id)
@@ -219,10 +287,10 @@ async def analyze(
 
 
 @app.get("/jobs/{job_id}")
-async def get_job(job_id: str):
-    job = _jobs.get(job_id)
+async def get_job(job_id: str, db: Session = Depends(get_db)):
+    job = crud.get_job(db, job_id)
     if job is None:
         return JSONResponse(status_code=404, content={"detail": "Job not found"})
-    if job["status"] == "processing":
+    if job.status == "processing":
         return {"job_id": job_id, "status": "processing"}
-    return job["result"]
+    return job.result
