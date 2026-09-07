@@ -15,11 +15,17 @@ function localDayKey(iso) {
   return `${y}-${m}-${day}`
 }
 
-// "2026-09-07" -> "Sep 7, 2026" (parsed as local midnight, no TZ shift).
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+// "2026-09-07" -> "7 Sep 2026" — day-first, built from the key string itself
+// so it's deterministic across engines and immune to any TZ shift.
 function dayLabel(key) {
-  const d = new Date(`${key}T00:00:00`)
-  if (Number.isNaN(d.getTime())) return key
-  return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })
+  const [y, m, d] = String(key).split('-').map(Number)
+  if (!y || !m || !d || m < 1 || m > 12) return key
+  return `${d} ${MONTHS_SHORT[m - 1]} ${y}`
 }
 
 function formatTime(iso) {
@@ -144,6 +150,9 @@ export default function History({ navigate }) {
             <input
               type="date"
               className="hist-date"
+              // Hint browsers to render the native control as DD/MM/YYYY rather
+              // than the en-US MM/DD/YYYY default.
+              lang="en-GB"
               aria-label="Filter sessions by date"
               value={filterDate}
               max={todayKey}
