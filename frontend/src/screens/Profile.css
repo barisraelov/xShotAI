@@ -1,0 +1,169 @@
+/* ── Profile cards ── */
+.pf-card {
+  margin: 4px 20px 16px;
+  padding: 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: var(--radius);
+}
+
+.pf-card-title {
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 700;
+  color: var(--text-muted);
+  margin-bottom: 12px;
+}
+
+/* ── Read-only user details ── */
+.pf-fields {
+  margin: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.pf-field {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+}
+.pf-field:last-child {
+  padding-bottom: 0;
+  border-bottom: none;
+}
+.pf-field dt {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  color: var(--text-muted);
+}
+.pf-field dd {
+  margin: 0;
+  min-width: 0;
+  font-size: 0.92rem;
+  font-weight: 600;
+  color: var(--text);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+/* ── Level & tier card ── */
+.pf-level-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+.pf-lvl {
+  flex-shrink: 0;
+  padding: 4px 10px;
+  border-radius: 999px;
+  background: var(--orange-dim);
+  color: var(--orange);
+  font-size: 0.72rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+}
+.pf-level-title {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.pf-max {
+  flex-shrink: 0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: linear-gradient(135deg, #ff6b2c, #ea580c);
+  color: #fff;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+}
+.pf-level-bar {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.08);
+  overflow: hidden;
+}
+.pf-level-bar-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #ff6b2c, #f97316);
+  transition: width 0.4s ease;
+}
+.pf-level-text {
+  margin-top: 8px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+/* ── Change-password form ── */
+.pf-form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+.pf-input-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.pf-input-field span {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+.pf-input-field input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  color: var(--text);
+  font: inherit;
+  font-size: 1rem;
+  outline: none;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+.pf-input-field input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-dim);
+}
+.pf-input-field input:disabled { opacity: 0.55; }
+
+.pf-submit { margin-top: 4px; }
+
+/* ── Inline alert ── */
+.pf-alert {
+  padding: 10px 12px;
+  border-radius: 10px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  line-height: 1.45;
+  border-left: 3px solid transparent;
+}
+.pf-alert--success {
+  background: rgba(52, 211, 153, 0.12);
+  border-left-color: var(--green);
+  color: var(--green);
+}
+.pf-alert--error {
+  background: rgba(248, 113, 113, 0.12);
+  border-left-color: var(--red);
+  color: var(--red);
+}
+.pf-alert--info {
+  background: var(--orange-dim);
+  border-left-color: var(--orange);
+  color: var(--orange);
+}

@@ -21,6 +21,7 @@ import Heatmap     from './screens/Heatmap'
 import Progress    from './screens/Progress'
 import Statistics  from './screens/Statistics'
 import History     from './screens/History'
+import Profile     from './screens/Profile'
 import Placeholder from './screens/Placeholder'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
@@ -97,7 +98,7 @@ const INITIAL_STATE = {
 // and the standalone placeholder pages (they carry their own back button).
 const NO_NAV_VIEWS = new Set([
   'welcome', 'login', 'register', 'analyzing', 'calibrate', 'live',
-  'terms', 'contact', 'profile',
+  'terms', 'contact',
 ])
 
 // Views that require an authenticated user. Navigating to any of these while
@@ -185,6 +186,8 @@ export default function App() {
     error:  state.error,
     file:   state.file,
     liveDiagnostics: state.liveDiagnostics,
+    user,
+    levelInfo,
   }
 
   return (
@@ -222,14 +225,7 @@ export default function App() {
       {state.view === 'progress'   && <Progress   {...screenProps} />}
       {state.view === 'statistics' && <Statistics {...screenProps} />}
       {state.view === 'history'    && <History    {...screenProps} />}
-      {state.view === 'profile'    && (
-        <Placeholder
-          {...screenProps}
-          icon="👤"
-          title="Profile"
-          blurb="Coming Soon: Profile Settings"
-        />
-      )}
+      {state.view === 'profile'    && <Profile    {...screenProps} />}
       {state.view === 'terms'      && (
         <Placeholder
           {...screenProps}
