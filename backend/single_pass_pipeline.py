@@ -75,7 +75,6 @@ def run(
         person_model=_person_model,
         collect_weak_detections=True,
         backend_dir=backend_dir,
-        fps=fps,
     )
 
     frame_idx = 0
@@ -117,7 +116,6 @@ def run(
                 model,
                 frame_width,
                 hoop_accepted_count,
-                fps=fps,
             )
             _stamp_fallback_shot_ids(shot_events)
             hoop_fallback_used = True

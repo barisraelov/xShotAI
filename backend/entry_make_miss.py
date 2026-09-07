@@ -14,30 +14,13 @@ from pathlib import Path
 from typing import Any, Optional
 
 import cv2
-import numpy as np
 
 import cv_pipeline
 
 BLUE_CHORD_FRAC_OF_HW = 0.94
 BBOX_INSET_PX = 1.0
-
-# ── Legacy absolute pixel fallbacks ──────────────────────────────────────────
-# Kept only for callers that pass no hoop geometry. Production paths use the
-# hoop-relative helpers below (_blue_eps / _rim_exit_margin), so the effective
-# tolerance scales with resolution instead of being pinned to a ~720p clip.
 BLUE_TOUCH_EPS_PX = 1.0
 RIM_EXIT_BELOW_MARGIN_PX = 8.0
-
-# ── Hoop-relative scales (resolution-independent) ────────────────────────────
-BLUE_EPS_FRAC_HH   = 0.06   # rim-plane "touch" tolerance as a fraction of hoop box height
-RIM_EXIT_FRAC_HH   = 0.20   # "ball has exited below the rim" margin, fraction of hoop height
-INNER_RIM_FRAC     = 0.80   # a MAKE crossing/confirmation must fall within this fraction of
-                            # the rim radius of centre (rejects edge clips / behind-rim x)
-BEHIND_RIM_SIZE_FRAC = 0.55 # ball radius at the crossing vs. trajectory median — a much
-                            # smaller ball means it is far away / behind the rim & backboard
-CONFIRM_WINDOW_SEC   = 0.40 # the confirmation must follow the downward crossing within this
-OCCLUSION_MAX_GAP_SEC = 0.18  # bridge tracking gaps up to ~5 frames @30fps around the chord
-
 CAP_HALF_WIDTH_FRAC_HW = 0.70
 CAP_Y_TOP_FRAC_HH = 1.30
 CAP_Y_BOT_FRAC_HH = 0.90
@@ -54,90 +37,12 @@ RESCUE_CONF_005 = 0.05
 RESCUE_CONF_0025 = 0.025
 RESCUE_SIZE_MIN_FRAC = 0.35
 RESCUE_SIZE_MAX_FRAC = 2.5
-# Small safety floor only — the effective tolerance is MOTION_TOL_FRAC_HW * hoop_w,
-# which scales with resolution (was a fixed 36 px that dominated on low-res clips).
-MOTION_TOL_MIN_PX = 6.0
+MOTION_TOL_MIN_PX = 36.0
 MOTION_TOL_FRAC_HW = 0.38
 
 MIN_HOOP_BOX_PX = 8.0
-MIN_HOOP_BOX_FRAC_W = 0.005  # only raises the floor on large frames (≈8 px at 720p)
 WEAK_RIM_HCX_FRAC = 0.12
 RIM_BALL_CX_FRAC = 0.35
-
-
-# ── Hoop-relative scale helpers ─────────────────────────────────────────────
-
-def _blue_eps(hoop_tuple: Optional[tuple]) -> float:
-    """Rim-plane touch tolerance in px, scaled to the hoop box height."""
-    if not hoop_tuple:
-        return BLUE_TOUCH_EPS_PX
-    return max(1.5, BLUE_EPS_FRAC_HH * float(hoop_tuple[4]))
-
-
-def _rim_exit_margin(hoop_tuple: Optional[tuple]) -> float:
-    """'Ball has dropped below the rim' margin in px, scaled to hoop height."""
-    if not hoop_tuple:
-        return RIM_EXIT_BELOW_MARGIN_PX
-    return max(4.0, RIM_EXIT_FRAC_HH * float(hoop_tuple[4]))
-
-
-def _confirm_window_frames(fps: float) -> int:
-    """How soon after the crossing the confirmation must occur (frame count)."""
-    return max(4, int(round(CONFIRM_WINDOW_SEC * float(fps or 30.0))))
-
-
-def _occlusion_max_gap(fps: float) -> int:
-    return max(2, int(round(OCCLUSION_MAX_GAP_SEC * float(fps or 30.0))))
-
-
-# ── Small trajectory maths ─────────────────────────────────────────────────
-
-def _lerp_x_at_y(x0: float, y0: float, x1: float, y1: float, y: float) -> Optional[float]:
-    if y1 == y0:
-        return None
-    t = (y - y0) / (y1 - y0)
-    return x0 + t * (x1 - x0)
-
-
-def _parabola_x_at_y(
-    p3: list[tuple[int, float, float]],
-    y: float,
-) -> Optional[float]:
-    """Fit x = a*yy^2 + b*yy + c through three (frame, x, y) points; eval at y."""
-    (_, x0, y0), (_, x1, y1), (_, x2, y2) = p3
-    ys = [y0, y1, y2]
-    if len(set(round(v, 3) for v in ys)) < 3:
-        return None
-    try:
-        a = np.array([[y0 * y0, y0, 1.0], [y1 * y1, y1, 1.0], [y2 * y2, y2, 1.0]])
-        b = np.array([x0, x1, x2])
-        coeff = np.linalg.solve(a, b)
-    except np.linalg.LinAlgError:
-        return None
-    return float(coeff[0] * y * y + coeff[1] * y + coeff[2])
-
-
-def _traj_median_radius(radius_by_frame: Optional[dict]) -> Optional[float]:
-    if not radius_by_frame:
-        return None
-    vals = sorted(float(r) for r in radius_by_frame.values() if r)
-    if not vals:
-        return None
-    return vals[len(vals) // 2]
-
-
-def _local_vy(xs: list[tuple[int, float, float]], idx: int) -> float:
-    """Downward (image y increasing) velocity estimate at point `idx`."""
-    if idx + 1 < len(xs):
-        f0, _x0, y0 = xs[idx]
-        f1, _x1, y1 = xs[idx + 1]
-    elif idx - 1 >= 0:
-        f0, _x0, y0 = xs[idx - 1]
-        f1, _x1, y1 = xs[idx]
-    else:
-        return 0.0
-    df = float(f1 - f0) or 1.0
-    return (y1 - y0) / df
 
 STATUS_COLORS_BGR = {
     "PROD": (0, 140, 255),
@@ -490,11 +395,9 @@ def _count_statuses(selected: list[dict[str, Any]]) -> dict[str, int]:
 
 def _point_touches_blue_chord(
     cx: float, cy: float, y_blue: float, xb1: float, xb2: float,
-    eps: Optional[float] = None,
 ) -> bool:
     xmin, xmax = (xb1, xb2) if xb1 <= xb2 else (xb2, xb1)
-    e = BLUE_TOUCH_EPS_PX if eps is None else float(eps)
-    return abs(cy - y_blue) <= e and xmin <= cx <= xmax
+    return abs(cy - y_blue) <= BLUE_TOUCH_EPS_PX and xmin <= cx <= xmax
 
 
 def _segment_hits_blue_chord(
@@ -510,23 +413,16 @@ def _finite_blue_crossings(
     y_blue: float,
     xb1: float,
     xb2: float,
-    eps: Optional[float] = None,
 ) -> list[dict[str, Any]]:
-    """Blue hit = segment intersects chord or vertex on chord (strict touch, no near-miss).
-
-    Each crossing carries `vy` (image-y velocity at the crossing; > 0 = descending)
-    and `downward` so callers can require a strictly downward pass through the rim
-    plane and reject front-rim bounces that pop upward through it.
-    """
+    """Blue hit = segment intersects chord or vertex on chord (strict touch, no near-miss)."""
     if len(pts) < 1:
         return []
     xs = sorted(pts, key=lambda p: p[0])
     xmin, xmax = (xb1, xb2) if xb1 <= xb2 else (xb2, xb1)
-    e = BLUE_TOUCH_EPS_PX if eps is None else float(eps)
     out: list[dict[str, Any]] = []
     seen_frames: set[float] = set()
 
-    def _add(frame: float, cx: float, kind: str, pair_index: int, vy: float) -> None:
+    def _add(frame: float, cx: float, kind: str, pair_index: int) -> None:
         key = round(frame, 4)
         if key in seen_frames:
             return
@@ -536,25 +432,22 @@ def _finite_blue_crossings(
             "cross_frame": float(frame),
             "pair_index": pair_index,
             "hit_kind": kind,
-            "vy": float(vy),
-            "downward": bool(vy > 0.0),
         })
 
     for i, (f0, x0, y0) in enumerate(xs):
-        if _point_touches_blue_chord(x0, y0, y_blue, xb1, xb2, e):
-            _add(float(f0), x0, "vertex_touch", i, _local_vy(xs, i))
+        if _point_touches_blue_chord(x0, y0, y_blue, xb1, xb2):
+            _add(float(f0), x0, "vertex_touch", i)
 
     for i, (p0, p1) in enumerate(zip(xs[:-1], xs[1:])):
         f0, x0, y0 = p0
         f1, x1, y1 = p1
         if not _segment_hits_blue_chord(x0, y0, x1, y1, y_blue, xb1, xb2):
             continue
-        seg_vy = (y1 - y0) / (float(f1 - f0) or 1.0)
         if y1 == y0:
-            if abs(y0 - y_blue) <= e:
+            if abs(y0 - y_blue) <= BLUE_TOUCH_EPS_PX:
                 mid_x = (x0 + x1) / 2.0
                 if xmin <= mid_x <= xmax:
-                    _add((float(f0) + float(f1)) / 2.0, mid_x, "segment_on_chord", i, seg_vy)
+                    _add((float(f0) + float(f1)) / 2.0, mid_x, "segment_on_chord", i)
             continue
         t = (y_blue - y0) / (y1 - y0)
         if not (0.0 <= t <= 1.0):
@@ -563,7 +456,7 @@ def _finite_blue_crossings(
         if not (xmin <= cx <= xmax):
             continue
         cross_frame = float(f0) + t * float(f1 - f0)
-        _add(cross_frame, cx, "cross", i, seg_vy)
+        _add(cross_frame, cx, "cross", i)
 
     out.sort(key=lambda d: d["cross_frame"])
     return out
@@ -574,15 +467,14 @@ def _segment_rim_involved(
     y_blue: float, xb1: float, xb2: float,
     cap_rect: tuple[float, float, float, float],
     confirm_rect: tuple[float, float, float, float],
-    eps: Optional[float] = None,
 ) -> bool:
     if _point_in_rect(x0, y0, cap_rect) or _point_in_rect(x1, y1, cap_rect):
         return True
     if _point_in_rect(x0, y0, confirm_rect) or _point_in_rect(x1, y1, confirm_rect):
         return True
-    if _point_touches_blue_chord(x0, y0, y_blue, xb1, xb2, eps):
+    if _point_touches_blue_chord(x0, y0, y_blue, xb1, xb2):
         return True
-    if _point_touches_blue_chord(x1, y1, y_blue, xb1, xb2, eps):
+    if _point_touches_blue_chord(x1, y1, y_blue, xb1, xb2):
         return True
     if _segment_hits_blue_chord(x0, y0, x1, y1, y_blue, xb1, xb2):
         return True
@@ -600,10 +492,7 @@ def trim_rim_relevant_trajectory(
     xb2: float,
     cap_rect: tuple[float, float, float, float],
     confirm_rect: tuple[float, float, float, float],
-    eps: Optional[float] = None,
-    exit_margin: Optional[float] = None,
 ) -> tuple[list[tuple[int, float, float]], dict[str, Any]]:
-    exit_m = RIM_EXIT_BELOW_MARGIN_PX if exit_margin is None else float(exit_margin)
     xs = sorted(pts, key=lambda p: p[0])
     meta: dict[str, Any] = {
         "trimmed": 0,
@@ -624,13 +513,13 @@ def trim_rim_relevant_trajectory(
         if _point_in_rect(cx, cy, cap_rect) or _point_in_rect(cx, cy, confirm_rect):
             involved_at = i
             break
-        if _point_touches_blue_chord(cx, cy, y_blue, xb1, xb2, eps):
+        if _point_touches_blue_chord(cx, cy, y_blue, xb1, xb2):
             involved_at = i
             break
         if i > 0:
             p0 = xs[i - 1]
             if _segment_rim_involved(
-                p0[1], p0[2], cx, cy, y_blue, xb1, xb2, cap_rect, confirm_rect, eps,
+                p0[1], p0[2], cx, cy, y_blue, xb1, xb2, cap_rect, confirm_rect,
             ):
                 involved_at = i
                 break
@@ -643,7 +532,7 @@ def trim_rim_relevant_trajectory(
     exit_at: Optional[int] = None
     for j in range(involved_at, len(xs)):
         fi, cx, cy = xs[j]
-        if cy > rim_bottom + exit_m:
+        if cy > rim_bottom + RIM_EXIT_BELOW_MARGIN_PX:
             exit_at = j
             break
 
@@ -708,143 +597,24 @@ def _confirmation_after_cross(
     pts: list[tuple[int, float, float]],
     cross_frame: float,
     confirm_rect: tuple[float, float, float, float],
-    *,
-    max_gap_frames: Optional[int] = None,
-    hcx: Optional[float] = None,
-    rim_half: Optional[float] = None,
-    require_descending: bool = False,
 ) -> tuple[Optional[int], Optional[str]]:
-    """First confirmation-zone hit strictly after `cross_frame`.
-
-    Optional strictness (used by the production entry rule):
-      max_gap_frames   — hit must land within this many frames of the crossing.
-      hcx / rim_half   — hit must sit within the physical rim opening in x.
-      require_descending — the ball must still be moving down at the hit.
-    """
     xs = sorted(pts, key=lambda p: p[0])
-
-    def _within_x(cx: float) -> bool:
-        if hcx is None or rim_half is None:
-            return True
-        return abs(cx - float(hcx)) <= float(rim_half)
-
-    def _within_gap(fi: float) -> bool:
-        return max_gap_frames is None or (float(fi) - float(cross_frame)) <= float(max_gap_frames)
-
-    for idx, (fi, cx, cy) in enumerate(xs):
+    for fi, cx, cy in xs:
         if float(fi) <= cross_frame:
             continue
-        if not _within_gap(fi):
-            break  # xs is sorted — nothing later qualifies either
-        if not _point_in_rect(cx, cy, confirm_rect):
-            continue
-        if not _within_x(cx):
-            continue
-        if require_descending and _local_vy(xs, idx) < -1e-6:
-            continue
-        return int(fi), "vertex"
-
-    for i, (p0, p1) in enumerate(zip(xs[:-1], xs[1:])):
+        if _point_in_rect(cx, cy, confirm_rect):
+            return int(fi), "vertex"
+    for p0, p1 in zip(xs[:-1], xs[1:]):
         f0, x0, y0 = p0
         f1, x1, y1 = p1
         if float(max(f0, f1)) <= cross_frame:
             continue
-        if not _segment_hits_rect(x0, y0, x1, y1, confirm_rect):
-            continue
-        # The ball is at-or-past the confirmation zone no later than the segment's
-        # later frame — use that as the (conservative) hit frame so a segment that
-        # merely *starts* near the crossing but only reaches the zone much later
-        # is correctly rejected by the temporal-window check.
-        hit_frame = int(max(f0, f1))
-        if hit_frame <= cross_frame or not _within_gap(hit_frame):
-            continue
-        # x check against whichever endpoint actually sits in the zone (else midpoint)
-        if _point_in_rect(x0, y0, confirm_rect):
-            probe_x = x0
-        elif _point_in_rect(x1, y1, confirm_rect):
-            probe_x = x1
-        else:
-            probe_x = (x0 + x1) / 2.0
-        if not _within_x(probe_x):
-            continue
-        if require_descending and (y1 - y0) < -1e-6:
-            continue
-        return hit_frame, "segment"
-
+        if float(min(f0, f1)) > cross_frame:
+            if _segment_hits_rect(x0, y0, x1, y1, confirm_rect):
+                return int(min(f0, f1)), "segment"
+        elif _segment_hits_rect(x0, y0, x1, y1, confirm_rect):
+            return int(max(f0, f1)), "segment"
     return None, None
-
-
-def _bridge_occlusion_make(
-    pts: list[tuple[int, float, float]],
-    y_blue: float,
-    xa: float,
-    xb: float,
-    hoop_tuple: Optional[tuple],
-    confirm_rect: tuple[float, float, float, float],
-    fps: float,
-    radius_by_frame: Optional[dict],
-) -> Optional[dict[str, Any]]:
-    """Requirement 2 — recover a MAKE hidden by a short net/rim tracking gap.
-
-    Looks for a frame gap that straddles the rim plane where the pre point is
-    above the rim heading down into the opening and the post point is cleanly
-    below the rim near centre. Bridges the gap (parabola if >=3 pre points, else
-    line); a MAKE is returned only if the bridged path passes through the
-    physical rim opening at y_blue.
-    """
-    if hoop_tuple is None or len(pts) < 3:
-        return None
-    hcx = float(hoop_tuple[0])
-    hw = float(hoop_tuple[3])
-    inner_half = INNER_RIM_FRAC * 0.5 * hw
-    xmin, xmax = (xa, xb) if xa <= xb else (xb, xa)
-    cpx1, _cpy1, cpx2, _cpy2 = confirm_rect
-    max_gap = _occlusion_max_gap(fps)
-    med_r = _traj_median_radius(radius_by_frame)
-
-    xs = sorted(pts, key=lambda p: p[0])
-    for i in range(len(xs) - 1):
-        f0, x0, y0 = xs[i]
-        f1, x1, y1 = xs[i + 1]
-        gap = int(f1) - int(f0)
-        if gap < 2 or gap > max_gap:
-            continue
-        if not (y0 <= y_blue <= y1):            # gap must straddle the rim plane
-            continue
-        # pre point over the opening, descending into it
-        vy_pre = _local_vy(xs, i) if i >= 1 else 1.0
-        if vy_pre <= 0.0:
-            continue
-        if not (xmin <= x0 <= xmax):
-            continue
-        # post point cleanly below the rim near centre
-        if not (y1 > y_blue and ((cpx1 <= x1 <= cpx2) or abs(x1 - hcx) <= 0.45 * hw)):
-            continue
-        # behind-rim sanity on the bracketing detections
-        if med_r is not None:
-            rr = [radius_by_frame.get(int(f0)), radius_by_frame.get(int(f1))]
-            rr = [float(r) for r in rr if r]
-            if rr and min(rr) < BEHIND_RIM_SIZE_FRAC * med_r:
-                continue
-        # bridge x where y == y_blue
-        bx: Optional[float] = None
-        if i >= 2:
-            bx = _parabola_x_at_y([xs[i - 2], xs[i - 1], xs[i]], y_blue)
-        if bx is None:
-            bx = _lerp_x_at_y(x0, y0, x1, y1, y_blue)
-        if bx is None:
-            continue
-        if not (xmin <= bx <= xmax and abs(bx - hcx) <= inner_half):
-            continue
-        return {
-            "diagnostic_result": "MAKE",
-            "reason": "occlusion_bridge_make",
-            "audit_tag": "occlusion_bridge",
-            "blue_cross_frame": (float(f0) + float(f1)) / 2.0,
-            "confirmation_frame": int(f1),
-            "confirmation_hit_kind": "bridge",
-        }
-    return None
 
 
 def evaluate_entry_rule(
@@ -853,69 +623,30 @@ def evaluate_entry_rule(
     xb1: float,
     xb2: float,
     confirm_rect: tuple[float, float, float, float],
-    *,
-    hoop_tuple: Optional[tuple] = None,
-    fps: float = 30.0,
-    radius_by_frame: Optional[dict] = None,
-    blue_eps: Optional[float] = None,
 ) -> dict[str, Any]:
-    """Directional entry rule.
-
-    A MAKE requires a *strictly downward* pass through the rim plane inside the
-    physical rim opening, followed — within a frame-rate-scaled window and while
-    still descending — by a confirmation-zone hit near the rim centre. Upward
-    (front-rim pop) crossings and behind-rim / edge-clip crossings are rejected.
-    If tracking is missing across the rim plane, a parabolic/linear bridge can
-    still confirm a MAKE (tagged `occlusion_bridge`).
-    """
-    base = {
-        "diagnostic_result": "MISS",
-        "reason": "insufficient_points",
-        "blue_cross_frame": None,
-        "confirmation_frame": None,
-        "confirmation_hit_kind": None,
-        "audit_tag": None,
-    }
     if len(pts) < 2:
-        return base
-
-    eps = blue_eps if blue_eps is not None else _blue_eps(hoop_tuple)
-    crossings = _finite_blue_crossings(pts, y_blue, xb1, xb2, eps)
-    downward = [c for c in crossings if c["downward"]]
-
-    hcx = float(hoop_tuple[0]) if hoop_tuple else None
-    hw = float(hoop_tuple[3]) if hoop_tuple else None
-    inner_half = (INNER_RIM_FRAC * 0.5 * hw) if hw is not None else None
-    rim_half = (0.5 * hw) if hw is not None else None
-    confirm_gap = _confirm_window_frames(fps)
-    med_r = _traj_median_radius(radius_by_frame)
-
-    def _radius_at(frame: float) -> Optional[float]:
-        if not radius_by_frame:
-            return None
-        fr = int(round(frame))
-        if fr in radius_by_frame:
-            return float(radius_by_frame[fr])
-        near = min(radius_by_frame, key=lambda k: abs(k - fr), default=None)
-        return float(radius_by_frame[near]) if near is not None else None
-
-    for c in sorted(downward, key=lambda d: d["cross_frame"]):
+        return {
+            "diagnostic_result": "MISS",
+            "reason": "insufficient_points",
+            "blue_cross_frame": None,
+            "confirmation_frame": None,
+            "confirmation_hit_kind": None,
+        }
+    crossings = _finite_blue_crossings(pts, y_blue, xb1, xb2)
+    if not crossings:
+        early, early_kind = _confirmation_after_cross(pts, -1.0, confirm_rect)
+        r = "no_blue_cross_confirm_only" if early is not None else "no_blue_cross"
+        return {
+            "diagnostic_result": "MISS",
+            "reason": r,
+            "blue_cross_frame": None,
+            "confirmation_frame": early,
+            "confirmation_hit_kind": early_kind,
+        }
+    first_cf = float(crossings[0]["cross_frame"])
+    for c in crossings:
         cross_f = float(c["cross_frame"])
-        cross_x = float(c["crossing_x"])
-        # inner-rim: the ball centre must pass through the opening, not clip the edge
-        if inner_half is not None and abs(cross_x - hcx) > inner_half:
-            continue
-        # behind-rim: an anomalously small ball at the crossing means it is far away
-        if med_r is not None:
-            rr = _radius_at(cross_f)
-            if rr is not None and rr < BEHIND_RIM_SIZE_FRAC * med_r:
-                continue
-        hit, kind = _confirmation_after_cross(
-            pts, cross_f, confirm_rect,
-            max_gap_frames=confirm_gap,
-            hcx=hcx, rim_half=rim_half,
-            require_descending=True,
-        )
+        hit, kind = _confirmation_after_cross(pts, cross_f, confirm_rect)
         if hit is not None:
             return {
                 "diagnostic_result": "MAKE",
@@ -923,26 +654,14 @@ def evaluate_entry_rule(
                 "blue_cross_frame": cross_f,
                 "confirmation_frame": hit,
                 "confirmation_hit_kind": kind,
-                "audit_tag": None,
             }
-
-    # No qualifying downward crossing — try to bridge a short occlusion gap.
-    bridged = _bridge_occlusion_make(
-        pts, y_blue, xb1, xb2, hoop_tuple, confirm_rect, fps, radius_by_frame,
-    )
-    if bridged is not None:
-        return bridged
-
-    if not crossings:
-        early, early_kind = _confirmation_after_cross(pts, -1.0, confirm_rect)
-        reason = "no_blue_cross_confirm_only" if early is not None else "no_blue_cross"
-        return {**base, "reason": reason,
-                "confirmation_frame": early, "confirmation_hit_kind": early_kind}
-    if not downward:
-        return {**base, "reason": "no_downward_cross",
-                "blue_cross_frame": float(crossings[0]["cross_frame"])}
-    return {**base, "reason": "blue_cross_no_confirm",
-            "blue_cross_frame": float(downward[0]["cross_frame"])}
+    return {
+        "diagnostic_result": "MISS",
+        "reason": "blue_cross_no_confirm",
+        "blue_cross_frame": first_cf,
+        "confirmation_frame": None,
+        "confirmation_hit_kind": None,
+    }
 
 
 def check_geometry(
@@ -954,8 +673,7 @@ def check_geometry(
     if hoop_tuple is None:
         return False, "INVALID_GEOMETRY", "missing_hoop_geometry"
     hcx, hcy, _fi, hw, hh, _conf = hoop_tuple
-    min_box = max(MIN_HOOP_BOX_PX, MIN_HOOP_BOX_FRAC_W * float(frame_w or 0.0))
-    if hw < min_box or hh < min_box:
+    if hw < MIN_HOOP_BOX_PX or hh < MIN_HOOP_BOX_PX:
         return False, "INVALID_GEOMETRY", "degenerate_hoop_box"
     if (
         hoop_accepted_count < cv_pipeline.HOOP_FALLBACK_REGULAR_MIN
@@ -969,17 +687,6 @@ def check_geometry(
             return False, "INVALID_GEOMETRY", "rim_ball_horizontal_mismatch"
     return True, "OK", ""
 
-
-
-def _radius_map_from_sel(sel_points: Optional[list]) -> dict[int, float]:
-    """{frame -> ball radius px} from build_continuous_trajectory `sel` dicts."""
-    out: dict[int, float] = {}
-    for d in sel_points or []:
-        try:
-            out[int(d["frame"])] = (float(d["w"]) + float(d["h"])) / 4.0
-        except (KeyError, TypeError, ValueError):
-            continue
-    return out
 
 
 def _ball_pos_to_ev(ball_pos: list, up_frame: int, down_frame: int) -> dict[str, Any]:
@@ -1004,7 +711,6 @@ def score_shot(
     frame_w: int,
     hoop_accepted_count: int,
     next_up_frame: Optional[int] = None,
-    fps: float = 30.0,
 ) -> tuple[bool, str]:
     """Production make/miss via entry rule. Returns (is_made, score_detail)."""
     if not hoop_pos:
@@ -1015,13 +721,11 @@ def score_shot(
     y_blue, xb1, xb2 = blue_rim_chord(hoop_tuple)
     cap_rect = capture_zone_rect(hoop_tuple)
     confirm_rect = confirmation_zone_rect(hoop_tuple, y_blue)
-    eps = _blue_eps(hoop_tuple)
-    exit_m = _rim_exit_margin(hoop_tuple)
-    trajectory, sel, _ct, _sc = build_continuous_trajectory(
+    trajectory, _sel, _ct, _sc = build_continuous_trajectory(
         Path(video_path), model, ev, up_frame, down_frame, f_end, hoop_tuple, cap_rect,
     )
     rim_pts, trim_meta = trim_rim_relevant_trajectory(
-        trajectory, y_blue, xb1, xb2, cap_rect, confirm_rect, eps, exit_m,
+        trajectory, y_blue, xb1, xb2, cap_rect, confirm_rect,
     )
     geom_ok, _gs, geom_reason = check_geometry(
         hoop_tuple, rim_pts, frame_w, hoop_accepted_count,
@@ -1030,26 +734,16 @@ def score_shot(
         return False, f"entry_geom:{geom_reason}"
     if len(rim_pts) < 2:
         return False, "entry:insufficient_points"
-    ev_out = evaluate_entry_rule(
-        rim_pts, y_blue, xb1, xb2, confirm_rect,
-        hoop_tuple=hoop_tuple, fps=fps,
-        radius_by_frame=_radius_map_from_sel(sel), blue_eps=eps,
-    )
+    ev_out = evaluate_entry_rule(rim_pts, y_blue, xb1, xb2, confirm_rect)
     is_made = ev_out.get("diagnostic_result") == "MAKE"
-    detail = _entry_detail(ev_out, trim_meta, len(trajectory), len(rim_pts))
-    return is_made, detail
-
-
-def _entry_detail(ev_out: dict, trim_meta: dict, n_traj: int, n_rim: int) -> str:
-    tag = ev_out.get("audit_tag")
-    return (
+    detail = (
         f"entry:{ev_out.get('reason')} "
         f"blue={ev_out.get('blue_cross_frame')} "
         f"confirm={ev_out.get('confirmation_frame')} "
-        + (f"tag={tag} " if tag else "")
-        + f"trim_drop={trim_meta.get('late_points_dropped', 0)} "
-        f"traj={n_traj} rim={n_rim}"
+        f"trim_drop={trim_meta.get('late_points_dropped', 0)} "
+        f"traj={len(trajectory)} rim={len(rim_pts)}"
     )
+    return is_made, detail
 
 
 def score_shot_from_data(shot_data: "ShotData", frame_w: int, hoop_accepted_count: int) -> tuple[bool, str]:
@@ -1067,12 +761,9 @@ def score_shot_from_data(shot_data: "ShotData", frame_w: int, hoop_accepted_coun
     cap_rect     = shot_data.cap_rect
     confirm_rect = shot_data.confirm_rect
     hoop_tuple   = shot_data.hoop_tuple
-    fps          = float(getattr(shot_data, "fps", 30.0) or 30.0)
-    eps          = _blue_eps(hoop_tuple)
-    exit_m       = _rim_exit_margin(hoop_tuple)
 
     rim_pts, trim_meta = trim_rim_relevant_trajectory(
-        trajectory, y_blue, xb1, xb2, cap_rect, confirm_rect, eps, exit_m,
+        trajectory, y_blue, xb1, xb2, cap_rect, confirm_rect,
     )
     geom_ok, _gs, geom_reason = check_geometry(
         hoop_tuple, rim_pts, frame_w, hoop_accepted_count,
@@ -1081,12 +772,13 @@ def score_shot_from_data(shot_data: "ShotData", frame_w: int, hoop_accepted_coun
         return False, f"entry_geom:{geom_reason}"
     if len(rim_pts) < 2:
         return False, "entry:insufficient_points"
-    ev_out = evaluate_entry_rule(
-        rim_pts, y_blue, xb1, xb2, confirm_rect,
-        hoop_tuple=hoop_tuple, fps=fps,
-        radius_by_frame=_radius_map_from_sel(getattr(shot_data, "sel_points", None)),
-        blue_eps=eps,
-    )
+    ev_out = evaluate_entry_rule(rim_pts, y_blue, xb1, xb2, confirm_rect)
     is_made = ev_out.get("diagnostic_result") == "MAKE"
-    detail = _entry_detail(ev_out, trim_meta, len(trajectory), len(rim_pts))
+    detail = (
+        f"entry:{ev_out.get('reason')} "
+        f"blue={ev_out.get('blue_cross_frame')} "
+        f"confirm={ev_out.get('confirmation_frame')} "
+        f"trim_drop={trim_meta.get('late_points_dropped', 0)} "
+        f"traj={len(trajectory)} rim={len(rim_pts)}"
+    )
     return is_made, detail

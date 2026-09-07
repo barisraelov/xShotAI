@@ -47,9 +47,6 @@ class ShotData:
     # Person detection: (feet_u, feet_v) of largest detected person in
     # [up_frame-30, up_frame-3].  None when no person found or model absent.
     person_feet: Optional[tuple[int, int]] = None
-    # Source video frame rate — lets the entry rule scale its temporal windows
-    # (confirmation-after-crossing, occlusion-gap bridge) instead of assuming 30.
-    fps: float = 30.0
 
 
 def build_shot_data(
@@ -63,7 +60,6 @@ def build_shot_data(
     hoop_accepted_count: int,
     person_model: Optional[Any] = None,
     next_up_frame: Optional[int] = None,
-    fps: float = 30.0,
 ) -> ShotData:
     """
     Single-pass data builder for one confirmed shot.
@@ -82,7 +78,6 @@ def build_shot_data(
     )
 
     sd = ShotData()
-    sd.fps = float(fps or 30.0)
 
     if not ev.get("hoop_stable"):
         return sd
@@ -159,13 +154,11 @@ def build_shot_data_from_accumulator(
     person_model: Optional[Any] = None,
     video_path: str | Path | None = None,
     next_up_frame: Optional[int] = None,
-    fps: float = 30.0,
 ) -> ShotData:
     """Package ShotData from TrajectoryAccumulator.finalize output (no video reopen)."""
     from entry_make_miss import blue_rim_chord, capture_zone_rect, confirmation_zone_rect, shot_frame_end
 
     sd = ShotData()
-    sd.fps = float(fps or 30.0)
     if not ev.get("hoop_stable"):
         return sd
 
