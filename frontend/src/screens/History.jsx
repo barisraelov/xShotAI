@@ -1,9 +1,14 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
-import { getSession, getSessions } from '../api'
+import { deleteSession, getSession, getSessions } from '../api'
 import { sessionTitle } from '../utils/sessions'
+import ConfirmDialog from '../components/ConfirmDialog'
 import './History.css'
+
+const DELETE_CONFIRM_MESSAGE =
+  'Are you sure you want to delete this session? This action cannot be undone ' +
+  'and will update your shooting stats.'
 
 // created_at is a UTC ISO string; the date filter/grouping is by the viewer's
 // LOCAL calendar day, so both sides key off the same local YYYY-MM-DD.
@@ -44,7 +49,7 @@ function formatTime(iso) {
   return d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
 }
 
-export default function History({ navigate }) {
+export default function History({ navigate, onSessionDeleted }) {
   const [sessions, setSessions] = useState([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState(null)
@@ -52,6 +57,10 @@ export default function History({ navigate }) {
   const [filterDate, setFilterDate] = useState('') // '' = all days
   const [openingId, setOpeningId] = useState(null)
   const [openError, setOpenError] = useState(null)
+
+  const [pendingDelete, setPendingDelete] = useState(null) // session obj | null
+  const [deleting, setDeleting] = useState(false)
+  const [deleteError, setDeleteError] = useState(null)
 
   // Only auto-pick the default date once; after that the user's choice
   // (including clearing back to "all") is left alone.
@@ -138,6 +147,23 @@ export default function History({ navigate }) {
     } catch (err) {
       setOpenError("Couldn't open that session. Please try again.")
       setOpeningId(null)
+    }
+  }
+
+  async function confirmDelete() {
+    if (deleting || !pendingDelete) return
+    const id = pendingDelete.id
+    setDeleting(true)
+    setDeleteError(null)
+    try {
+      await deleteSession(id)
+      setSessions(prev => prev.filter(s => s.id !== id))
+      onSessionDeleted?.(id)
+      setPendingDelete(null)
+    } catch (err) {
+      setDeleteError('Could not delete this session. Please try again.')
+    } finally {
+      setDeleting(false)
     }
   }
 
@@ -249,7 +275,7 @@ export default function History({ navigate }) {
 
               <ul className="hist-list">
                 {g.sessions.map(s => (
-                  <li key={s.id}>
+                  <li className="hist-li" key={s.id}>
                     <button
                       className="hist-row"
                       onClick={() => openSession(s.id)}
@@ -269,6 +295,16 @@ export default function History({ navigate }) {
                         {openingId === s.id ? '…' : '→'}
                       </span>
                     </button>
+                    <button
+                      type="button"
+                      className="hist-del-btn"
+                      onClick={() => { setDeleteError(null); setPendingDelete(s) }}
+                      disabled={deleting}
+                      aria-label={`Delete session ${sessionTitle(s)}`}
+                      title="Delete session"
+                    >
+                      🗑️
+                    </button>
                   </li>
                 ))}
               </ul>
@@ -276,6 +312,18 @@ export default function History({ navigate }) {
           ))}
         </>
       )}
+
+      {deleteError && <div className="error-box">{deleteError}</div>}
+
+      <ConfirmDialog
+        open={!!pendingDelete}
+        title="Delete Session?"
+        message={DELETE_CONFIRM_MESSAGE}
+        confirmLabel="Delete"
+        busy={deleting}
+        onCancel={() => { setPendingDelete(null); setDeleteError(null) }}
+        onConfirm={confirmDelete}
+      />
     </div>
   )
 }

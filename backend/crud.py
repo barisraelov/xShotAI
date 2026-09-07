@@ -9,7 +9,7 @@ parameters are typed with the `DbSession` alias below.
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session as DbSession
 
 from models import Job, LiveSession, LiveShot, Session, User
@@ -127,6 +127,24 @@ def update_session(
     db.commit()
     db.refresh(row)
     return row
+
+
+def delete_session(db: DbSession, session_id: str) -> bool:
+    """Remove a saved session. Any Live session whose `history_session_id`
+    points here is detached first (set to NULL) so the FK doesn't block the
+    delete — the Live rows themselves are kept. Returns True if a row was
+    removed. Ownership is checked by the caller."""
+    row = db.get(Session, session_id)
+    if row is None:
+        return False
+    db.execute(
+        update(LiveSession)
+        .where(LiveSession.history_session_id == session_id)
+        .values(history_session_id=None)
+    )
+    db.delete(row)
+    db.commit()
+    return True
 
 
 # ── Users ────────────────────────────────────────────────────────────────────

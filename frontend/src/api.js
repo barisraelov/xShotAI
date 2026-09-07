@@ -108,3 +108,32 @@ export function updateSessionDate(sessionId, newDateIso) {
 export function updateSessionTitle(sessionId, newTitle) {
   return updateSession(sessionId, { title: newTitle })
 }
+
+/**
+ * Permanently delete a saved session. Resolves to the backend's
+ * `{ status, message }` on success. When the endpoint isn't there yet
+ * (404 / 501) or the network is down during local dev, resolves to
+ * `{ simulated: true }` so the UI can still drop the row locally.
+ */
+export async function deleteSession(sessionId) {
+  let res
+  try {
+    res = await fetch(`${API_BASE}/sessions/${sessionId}`, {
+      method: 'DELETE',
+      headers: { ...authHeaders() },
+    })
+  } catch {
+    return { simulated: true }
+  }
+
+  if (res.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired — please log in again')
+  }
+  if (res.status === 404 || res.status === 501) {
+    return { simulated: true }
+  }
+  if (!res.ok) throw new Error(`Failed to delete session (${res.status})`)
+  // 204 has no body; 200 returns { status, message }.
+  return res.status === 204 ? { status: 'success' } : res.json()
+}

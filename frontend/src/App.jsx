@@ -245,6 +245,20 @@ export default function App() {
     refreshSessions()
   }
 
+  // A session was deleted. Drop it from the cached list right away (so the
+  // drawer's level badge / cumulative stats re-derive instantly), clear the
+  // open analysis state if that's the row that went, then reconcile with the
+  // backend. Dashboard / History re-fetch on their next mount.
+  function handleSessionDeleted(deletedId) {
+    setSessions(list => list.filter(x => x.id !== deletedId))
+    setState(s =>
+      s.sessionId === deletedId
+        ? { ...s, ...CLEARED_ANALYSIS_STATE }
+        : s,
+    )
+    refreshSessions()
+  }
+
   const noNav = NO_NAV_VIEWS.has(state.view)
   const showChrome = !noNav && authed
 
@@ -264,6 +278,7 @@ export default function App() {
     sessionTitle: state.sessionTitle,
     onSessionDateChange: handleSessionDateChange,
     onSessionTitleChange: handleSessionTitleChange,
+    onSessionDeleted: handleSessionDeleted,
     user,
     levelInfo,
   }

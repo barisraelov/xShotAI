@@ -104,8 +104,14 @@
   flex-direction: column;
   gap: 8px;
 }
+.hist-li {
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
 .hist-row {
-  width: 100%;
+  flex: 1;
+  min-width: 0;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -120,6 +126,28 @@
 }
 .hist-row:hover { border-color: rgba(255, 107, 44, 0.4); }
 .hist-row:disabled { opacity: 0.6; cursor: default; }
+
+.hist-del-btn {
+  flex: 0 0 auto;
+  width: 40px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  font-size: 0.95rem;
+  line-height: 1;
+  cursor: pointer;
+  opacity: 0.55;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+.hist-del-btn:hover:not(:disabled) {
+  opacity: 1;
+  border-color: rgba(248, 113, 113, 0.5);
+}
+.hist-del-btn:disabled { opacity: 0.3; cursor: default; }
 
 .hist-row-main {
   flex: 1;

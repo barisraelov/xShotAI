@@ -1,9 +1,10 @@
 """
 /sessions endpoints — a logged-in user's saved analysis history.
 
-  GET   /sessions              -> 200 list[SessionSummary]   (newest first)
-  GET   /sessions/{session_id} -> 200 SessionDetail          (full AnalyzeResult)
-  PATCH /sessions/{session_id} -> 200 SessionDetail          (edit date / title)
+  GET    /sessions              -> 200 list[SessionSummary]  (newest first)
+  GET    /sessions/{session_id} -> 200 SessionDetail         (full AnalyzeResult)
+  PATCH  /sessions/{session_id} -> 200 SessionDetail         (edit date / title)
+  DELETE /sessions/{session_id} -> 200 {status, message}     (remove from history)
 
 All are Bearer-protected. A session that exists but belongs to another user
 returns 404 (so ownership isn't leaked).
@@ -82,3 +83,20 @@ def update_session(
     return crud.update_session(
         db, session_id, new_created_at=new_dt, new_title=new_title
     )
+
+
+@router.delete("/{session_id}")
+def delete_session(
+    session_id: str,
+    current_user: User = Depends(get_current_user),
+    db: DbSession = Depends(get_db),
+):
+    """Permanently remove a saved session from the owner's history. The shot /
+    zone data lives inside the session's `result` JSON, so deleting the row
+    removes everything; any Live session that linked here is detached."""
+    session = crud.get_session(db, session_id)
+    if session is None or session.user_id != current_user.id:
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    crud.delete_session(db, session_id)
+    return {"status": "success", "message": "Session deleted successfully"}

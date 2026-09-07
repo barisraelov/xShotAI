@@ -1,10 +1,15 @@
 import { useState } from 'react'
 import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
+import ConfirmDialog from '../components/ConfirmDialog'
 import VisualFeedback, { VisualSessionSummary } from '../components/VisualFeedback'
-import { updateSessionDate, updateSessionTitle } from '../api'
+import { deleteSession, updateSessionDate, updateSessionTitle } from '../api'
 import { MAX_SESSION_TITLE_LEN, SESSION_TITLE_FALLBACK } from '../utils/sessions'
 import './Session.css'
+
+const DELETE_CONFIRM_MESSAGE =
+  'Are you sure you want to delete this session? This action cannot be undone ' +
+  'and will update your shooting stats.'
 
 const MONTHS_SHORT = [
   'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
@@ -368,6 +373,51 @@ function zoneBreakdown(shotPoints) {
   return { twos: calc(twos), threes: calc(threes) }
 }
 
+/** Muted-red "Delete session" action + its confirm modal. */
+function SessionDeleteAction({ sessionId, navigate, onSessionDeleted }) {
+  const [confirming, setConfirming] = useState(false)
+  const [deleting, setDeleting] = useState(false)
+  const [error, setError] = useState(null)
+
+  async function doDelete() {
+    if (deleting) return
+    setDeleting(true)
+    setError(null)
+    try {
+      await deleteSession(sessionId)
+      onSessionDeleted?.(sessionId)
+      navigate('history')
+    } catch (err) {
+      setError('Could not delete this session. Please try again.')
+      setDeleting(false)
+      setConfirming(false)
+    }
+  }
+
+  return (
+    <div className="session-delete-row">
+      <button
+        type="button"
+        className="session-delete-btn"
+        onClick={() => { setError(null); setConfirming(true) }}
+      >
+        🗑️ Delete session
+      </button>
+      {error && <span className="session-date-error" role="alert">{error}</span>}
+
+      <ConfirmDialog
+        open={confirming}
+        title="Delete Session?"
+        message={DELETE_CONFIRM_MESSAGE}
+        confirmLabel="Delete"
+        busy={deleting}
+        onCancel={() => setConfirming(false)}
+        onConfirm={doDelete}
+      />
+    </div>
+  )
+}
+
 export default function Session({
   navigate,
   result,
@@ -377,6 +427,7 @@ export default function Session({
   sessionTitle,
   onSessionDateChange,
   onSessionTitleChange,
+  onSessionDeleted,
 }) {
   if (!result) {
     return (
@@ -422,6 +473,14 @@ export default function Session({
           sessionId={sessionId}
           sessionDate={sessionDate}
           onSaved={onSessionDateChange}
+        />
+      )}
+
+      {sessionId && (
+        <SessionDeleteAction
+          sessionId={sessionId}
+          navigate={navigate}
+          onSessionDeleted={onSessionDeleted}
         />
       )}
 

@@ -1,0 +1,96 @@
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.6);
+  animation: confirmFade 0.15s ease;
+}
+
+.confirm-card {
+  width: 100%;
+  max-width: 380px;
+  background: var(--bg-elevated);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: var(--radius);
+  padding: 22px 20px 18px;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+  animation: confirmPop 0.15s ease;
+}
+
+.confirm-title {
+  margin: 0 0 8px;
+  font-size: 1.1rem;
+  font-weight: 800;
+  color: var(--text);
+}
+.confirm-message {
+  margin: 0 0 20px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  color: var(--text-muted);
+}
+
+.confirm-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+}
+.confirm-btn {
+  min-width: 88px;
+  padding: 9px 16px;
+  border-radius: 10px;
+  font: inherit;
+  font-size: 0.9rem;
+  font-weight: 700;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid transparent;
+}
+.confirm-btn:disabled { opacity: 0.6; cursor: default; }
+
+.confirm-btn--ghost {
+  background: none;
+  border-color: rgba(255, 255, 255, 0.16);
+  color: var(--text-muted);
+}
+.confirm-btn--ghost:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(255, 255, 255, 0.28);
+}
+
+.confirm-btn--danger {
+  background: var(--red);
+  color: #1a0a0a;
+}
+.confirm-btn--danger:hover:not(:disabled) { filter: brightness(1.08); }
+
+.confirm-btn--primary {
+  background: var(--orange);
+  color: #1a0a02;
+}
+
+.confirm-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid rgba(0, 0, 0, 0.35);
+  border-top-color: rgba(0, 0, 0, 0.85);
+  border-radius: 50%;
+  animation: confirmSpin 0.7s linear infinite;
+}
+
+@keyframes confirmSpin { to { transform: rotate(360deg); } }
+@keyframes confirmFade { from { opacity: 0; } }
+@keyframes confirmPop {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .confirm-backdrop, .confirm-card { animation: none; }
+  .confirm-spinner { animation-duration: 2s; }
+}
