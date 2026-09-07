@@ -88,10 +88,28 @@ const INITIAL_STATE = {
 
 const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate', 'live'])
 
+// Views that require an authenticated user. Navigating to any of these while
+// logged out (e.g. the header logo's onClick, which targets 'dashboard') is
+// redirected to the login screen. The ?demo= dev preview is exempt.
+const PROTECTED_VIEWS = new Set([
+  'dashboard', 'upload', 'live', 'calibrate', 'analyzing',
+  'session', 'heatmap', 'progress', 'statistics',
+])
+
+function isBlockedWhileLoggedOut(view) {
+  return PROTECTED_VIEWS.has(view) && !demoView() && !isAuthed()
+}
+
 export default function App() {
   const [state, setState] = useState(INITIAL_STATE)
 
   function navigate(view, patch = {}) {
+    // Route protection: a logged-out user can never reach an authenticated-only
+    // view. Send them to login instead of the dashboard.
+    if (isBlockedWhileLoggedOut(view)) {
+      setState(s => ({ ...s, view: 'login', error: null }))
+      return
+    }
     setState(s => ({ ...s, view, ...patch }))
   }
 
@@ -101,6 +119,14 @@ export default function App() {
     setUnauthorizedHandler(() => setState(s => ({ ...s, view: 'login', error: null })))
     return () => setUnauthorizedHandler(null)
   }, [])
+
+  // Belt-and-suspenders: if state ever lands on a protected view without a
+  // token (stale state, token cleared in another tab), snap back to login.
+  useEffect(() => {
+    if (isBlockedWhileLoggedOut(state.view)) {
+      setState(s => ({ ...s, view: 'login', error: null }))
+    }
+  }, [state.view])
 
   const noNav = NO_NAV_VIEWS.has(state.view)
 
