@@ -25,32 +25,44 @@ function formatSessionDate(iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
   const date = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`
-  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  const time = d.toLocaleTimeString(undefined, {
+    hour: '2-digit', minute: '2-digit',
+  })
   return `${date} · ${time}`
 }
 
-// Re-date an ISO timestamp to a new local calendar day, keeping the time-of-day
-// so within-day ordering and the hour shown stay intact.
-function withNewDay(iso, dayKey) {
-  const base = new Date(iso)
-  const [y, m, d] = dayKey.split('-').map(Number)
-  const next = Number.isNaN(base.getTime()) ? new Date() : new Date(base)
-  next.setFullYear(y, m - 1, d)
-  return next.toISOString()
+// UTC ISO -> local "HH:MM" (for <input type="time">).
+function isoToTimeKey(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const hh = String(d.getHours()).padStart(2, '0')
+  const mm = String(d.getMinutes()).padStart(2, '0')
+  return `${hh}:${mm}`
 }
 
-/** Inline "edit session date" control shown in the Session header. */
+// Combine a local day ("YYYY-MM-DD") + local time ("HH:MM") into a UTC ISO
+// timestamp, so the exact local hour/minute the user picked is what gets stored.
+function combineDayTime(dayKey, timeKey) {
+  const [y, m, d] = dayKey.split('-').map(Number)
+  const [hh, mm] = (timeKey || '00:00').split(':').map(Number)
+  const local = new Date(y, m - 1, d, hh || 0, mm || 0, 0, 0)
+  return Number.isNaN(local.getTime()) ? null : local.toISOString()
+}
+
+/** Inline "edit session date & time" control shown in the Session header. */
 function SessionDateEditor({ sessionId, sessionDate, onSaved }) {
   const todayKey = isoToDayKey(new Date().toISOString())
 
   const [displayIso, setDisplayIso] = useState(sessionDate)
   const [editing, setEditing] = useState(false)
   const [draftDay, setDraftDay] = useState(isoToDayKey(sessionDate))
+  const [draftTime, setDraftTime] = useState(isoToTimeKey(sessionDate))
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState(null)
 
   function startEdit() {
     setDraftDay(isoToDayKey(displayIso))
+    setDraftTime(isoToTimeKey(displayIso))
     setError(null)
     setEditing(true)
   }
@@ -65,11 +77,19 @@ function SessionDateEditor({ sessionId, sessionDate, onSaved }) {
       setError('Please pick a date.')
       return
     }
-    if (draftDay > todayKey) {
-      setError('Session date cannot be in the future.')
+    if (!draftTime) {
+      setError('Please pick a time.')
       return
     }
-    const newIso = withNewDay(displayIso, draftDay)
+    const newIso = combineDayTime(draftDay, draftTime)
+    if (!newIso) {
+      setError('That date and time are not valid.')
+      return
+    }
+    if (new Date(newIso).getTime() > Date.now()) {
+      setError('Session date and time cannot be in the future.')
+      return
+    }
     setSaving(true)
     setError(null)
     try {
@@ -97,6 +117,15 @@ function SessionDateEditor({ sessionId, sessionDate, onSaved }) {
             max={todayKey}
             onChange={e => setDraftDay(e.target.value)}
             disabled={saving}
+            aria-label="Session date"
+          />
+          <input
+            type="time"
+            className="session-time-input"
+            value={draftTime}
+            onChange={e => setDraftTime(e.target.value)}
+            disabled={saving}
+            aria-label="Session time"
           />
           <button
             type="button"
@@ -122,8 +151,8 @@ function SessionDateEditor({ sessionId, sessionDate, onSaved }) {
             type="button"
             className="session-date-edit-btn"
             onClick={startEdit}
-            aria-label="Edit session date"
-            title="Edit session date"
+            aria-label="Edit session date and time"
+            title="Edit session date and time"
           >
             ✏️
           </button>

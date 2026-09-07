@@ -869,7 +869,8 @@
   align-items: center;
   gap: 8px;
 }
-.session-date-input {
+.session-date-input,
+.session-time-input {
   padding: 8px 10px;
   background: var(--bg);
   border: 1px solid rgba(255, 255, 255, 0.1);
@@ -880,7 +881,12 @@
   outline: none;
   color-scheme: dark;
 }
-.session-date-input:focus {
+.session-time-input {
+  flex: 0 0 auto;
+  min-width: 96px;
+}
+.session-date-input:focus,
+.session-time-input:focus {
   border-color: var(--orange);
   box-shadow: 0 0 0 3px var(--orange-dim);
 }
