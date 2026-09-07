@@ -1,0 +1,123 @@
+/* ── Top controls: date filter + clear ── */
+.hist-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px;
+  padding: 4px 20px 10px;
+}
+
+.hist-date {
+  padding: 9px 12px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 0.9rem;
+  color-scheme: dark; /* native calendar popup + spinners in dark */
+}
+.hist-date:focus {
+  outline: none;
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-dim);
+}
+
+.hist-clear {
+  padding: 9px 12px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.hist-clear:hover {
+  color: var(--text);
+  border-color: rgba(255, 107, 44, 0.4);
+}
+
+.hist-summary {
+  padding: 0 20px 12px;
+  color: var(--text-muted);
+  font-size: 0.85rem;
+}
+
+/* ── Empty states ── */
+.hist-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 8px 20px 24px;
+}
+.hist-empty .btn { flex: 0 0 auto; }
+
+/* ── Day group ── */
+.hist-group {
+  padding: 0 20px 18px;
+}
+.hist-group-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 6px 2px 10px;
+}
+.hist-group-date {
+  font-size: 0.78rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 700;
+  color: var(--text-muted);
+}
+.hist-group-total {
+  flex-shrink: 0;
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--orange);
+}
+
+/* ── Session cards (mirrors the dashboard's .history-row design) ── */
+.hist-list {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.hist-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 16px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  cursor: pointer;
+  text-align: left;
+}
+.hist-row:hover { border-color: rgba(255, 107, 44, 0.4); }
+.hist-row:disabled { opacity: 0.6; cursor: default; }
+
+.hist-row-time {
+  flex: 1;
+  min-width: 0;
+  font-size: 0.92rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-row-stat { flex-shrink: 0; font-weight: 700; font-size: 0.95rem; }
+.hist-row-pct { color: var(--text-muted); font-weight: 600; }
+.hist-row-go {
+  flex-shrink: 0;
+  color: var(--orange);
+  font-weight: 700;
+  width: 1rem;
+  text-align: center;
+}

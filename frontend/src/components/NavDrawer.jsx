@@ -3,9 +3,10 @@ import './NavDrawer.css'
 
 const LINKS = [
   { view: 'dashboard',  icon: '🏠', label: 'Dashboard' },
-  { view: 'statistics', icon: '📊', label: 'Statistics' },
-  { view: 'progress',   icon: '📈', label: 'Progress' },
   { view: 'profile',    icon: '👤', label: 'Profile' },
+  { view: 'history',    icon: '📜', label: 'History' },
+  { view: 'progress',   icon: '📈', label: 'Progress' },
+  { view: 'statistics', icon: '📊', label: 'Statistics' },
 ]
 
 /**

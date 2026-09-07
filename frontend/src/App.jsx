@@ -20,6 +20,7 @@ import Session     from './screens/Session'
 import Heatmap     from './screens/Heatmap'
 import Progress    from './screens/Progress'
 import Statistics  from './screens/Statistics'
+import History     from './screens/History'
 import Placeholder from './screens/Placeholder'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
@@ -105,7 +106,7 @@ const NO_NAV_VIEWS = new Set([
 // dev preview is exempt.
 const PROTECTED_VIEWS = new Set([
   'dashboard', 'upload', 'live', 'calibrate', 'analyzing',
-  'session', 'heatmap', 'progress', 'statistics', 'profile',
+  'session', 'heatmap', 'progress', 'statistics', 'history', 'profile',
 ])
 
 function isBlockedWhileLoggedOut(view) {
@@ -220,6 +221,7 @@ export default function App() {
       {state.view === 'heatmap'    && <Heatmap    {...screenProps} />}
       {state.view === 'progress'   && <Progress   {...screenProps} />}
       {state.view === 'statistics' && <Statistics {...screenProps} />}
+      {state.view === 'history'    && <History    {...screenProps} />}
       {state.view === 'profile'    && (
         <Placeholder
           {...screenProps}
