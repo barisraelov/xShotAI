@@ -23,7 +23,7 @@ import Statistics  from './screens/Statistics'
 import History     from './screens/History'
 import Profile     from './screens/Profile'
 import Terms       from './screens/Terms'
-import Placeholder from './screens/Placeholder'
+import Contact     from './screens/Contact'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
 const DEMO_STUB = {
@@ -230,14 +230,7 @@ export default function App() {
       {state.view === 'history'    && <History    {...screenProps} />}
       {state.view === 'profile'    && <Profile    {...screenProps} />}
       {state.view === 'terms'      && <Terms       {...screenProps} />}
-      {state.view === 'contact'    && (
-        <Placeholder
-          {...screenProps}
-          icon="✉️"
-          title="Contact Us"
-          blurb="Contact Us — Coming soon"
-        />
-      )}
+      {state.view === 'contact'    && <Contact     {...screenProps} />}
 
       {showChrome && <AppFooter navigate={navigate} />}
 
