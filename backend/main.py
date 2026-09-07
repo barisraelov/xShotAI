@@ -44,6 +44,7 @@ from court_mapper import CourtMapper
 from db import Base, SessionLocal, engine, get_db
 from result_builder import build_real_result as _build_real_result
 from routers import auth as auth_router
+from routers import contact as contact_router
 from routers import live as live_router
 from routers import sessions as sessions_router
 from routers import users as users_router
@@ -164,6 +165,7 @@ app.include_router(auth_router.router)
 app.include_router(users_router.router)
 app.include_router(sessions_router.router)
 app.include_router(live_router.router)
+app.include_router(contact_router.router)
 
 
 @app.get("/version")

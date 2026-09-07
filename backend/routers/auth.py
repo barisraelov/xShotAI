@@ -1,9 +1,10 @@
 """
-/auth endpoints — registration, login, and the current-user probe.
+/auth endpoints — registration, login, current-user probe, password change.
 
-  POST /auth/register  -> 201 UserOut
-  POST /auth/login     -> 200 Token          (OAuth2 password form; Swagger-native)
-  GET  /auth/me        -> 200 UserOut        (Bearer-protected)
+  POST /auth/register         -> 201 UserOut
+  POST /auth/login            -> 200 Token          (OAuth2 password form; Swagger-native)
+  GET  /auth/me               -> 200 UserOut        (Bearer-protected)
+  POST /auth/change-password  -> 200 MessageResult  (Bearer-protected)
 """
 
 import logging
@@ -14,10 +15,17 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 import crud
-from auth import create_access_token, get_current_user, verify_password
+from auth import (
+    create_access_token,
+    get_current_user,
+    hash_password,
+    verify_password,
+)
 from db import get_db
 from models import User
-from schemas import Token, UserCreate, UserOut
+from schemas import ChangePasswordRequest, MessageResult, Token, UserCreate, UserOut
+
+MIN_PASSWORD_LEN = 8
 
 logger = logging.getLogger(__name__)
 
@@ -63,3 +71,28 @@ def login(
 @router.get("/me", response_model=UserOut)
 def me(current_user: User = Depends(get_current_user)) -> User:
     return current_user
+
+
+@router.post("/change-password", response_model=MessageResult)
+def change_password(
+    payload: ChangePasswordRequest,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> MessageResult:
+    """Change the signed-in user's password. The current password must match;
+    the new one must be at least 8 characters and different from the old one."""
+    if not verify_password(payload.current_password, current_user.hashed_password):
+        raise HTTPException(status_code=400, detail="Current password is incorrect.")
+    if len(payload.new_password) < MIN_PASSWORD_LEN:
+        raise HTTPException(
+            status_code=400,
+            detail=f"New password must be at least {MIN_PASSWORD_LEN} characters.",
+        )
+    if payload.new_password == payload.current_password:
+        raise HTTPException(
+            status_code=400,
+            detail="New password must be different from the current one.",
+        )
+
+    crud.set_user_password(db, current_user, hash_password(payload.new_password))
+    return MessageResult(detail="Password updated successfully.")

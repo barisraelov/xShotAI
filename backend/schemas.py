@@ -63,6 +63,25 @@ class SessionDateUpdate(BaseModel):
     created_at: datetime
 
 
+class ChangePasswordRequest(BaseModel):
+    """POST /auth/change-password body (Bearer-protected)."""
+    current_password: str
+    new_password: str
+
+
+class ContactMessage(BaseModel):
+    """POST /contact body — support / feedback form."""
+    name: str
+    email: str
+    subject: str
+    message: str
+
+
+class MessageResult(BaseModel):
+    """`{ "detail": "..." }` body for status-only endpoints."""
+    detail: str
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

@@ -145,6 +145,14 @@ def get_user_by_id(db: DbSession, user_id: str) -> Optional[User]:
     return db.get(User, user_id)
 
 
+def set_user_password(db: DbSession, user: User, new_hashed_password: str) -> User:
+    """Store a new bcrypt hash for the user."""
+    user.hashed_password = new_hashed_password
+    db.commit()
+    db.refresh(user)
+    return user
+
+
 # ── Live sessions ────────────────────────────────────────────────────────────
 
 def create_live_session(db: DbSession, *, live_session_id: str, user_id: str) -> LiveSession:
