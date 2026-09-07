@@ -298,7 +298,11 @@ export default function History({ navigate, onSessionDeleted }) {
                     <button
                       type="button"
                       className="hist-del-btn"
-                      onClick={() => { setDeleteError(null); setPendingDelete(s) }}
+                      onClick={e => {
+                        e.stopPropagation()
+                        setDeleteError(null)
+                        setPendingDelete(s)
+                      }}
                       disabled={deleting}
                       aria-label={`Delete session ${sessionTitle(s)}`}
                       title="Delete session"

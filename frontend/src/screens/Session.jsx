@@ -373,7 +373,7 @@ function zoneBreakdown(shotPoints) {
   return { twos: calc(twos), threes: calc(threes) }
 }
 
-/** Muted-red "Delete session" action + its confirm modal. */
+/** Red outline "Delete Session" button + its confirm modal. */
 function SessionDeleteAction({ sessionId, navigate, onSessionDeleted }) {
   const [confirming, setConfirming] = useState(false)
   const [deleting, setDeleting] = useState(false)
@@ -401,7 +401,7 @@ function SessionDeleteAction({ sessionId, navigate, onSessionDeleted }) {
         className="session-delete-btn"
         onClick={() => { setError(null); setConfirming(true) }}
       >
-        🗑️ Delete session
+        🗑️ Delete Session
       </button>
       {error && <span className="session-date-error" role="alert">{error}</span>}
 

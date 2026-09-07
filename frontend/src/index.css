@@ -8,6 +8,8 @@
   --text-muted: #8b8b94;
   --green: #34d399;
   --red: #f87171;
+  --danger: #ef4444;
+  --danger-dim: rgba(239, 68, 68, 0.14);
   --radius: 14px;
   --safe-bottom: env(safe-area-inset-bottom, 12px);
 }
