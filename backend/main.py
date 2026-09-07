@@ -50,12 +50,6 @@ from routers import users as users_router
 
 logger = logging.getLogger(__name__)
 
-# Ensure application loggers (email dispatch, background tasks) actually emit.
-# Without this, uvicorn configures only its own loggers and app-level INFO is
-# swallowed — successful verification-email sends would be invisible in logs.
-if not logging.getLogger().handlers:
-    logging.basicConfig(level=logging.INFO)
-
 
 # ── Background tasks ───────────────────────────────────────────────────────────
 

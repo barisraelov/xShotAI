@@ -24,17 +24,6 @@ pydantic-settings, with development-friendly fallbacks.
                                   into the running container automatically; set
                                   BUILD_SHA yourself on other platforms. Surfaced
                                   at GET /version and in /openapi.json info.version.
-  SMTP_HOST / _PORT / _USER /   — Gmail SMTP credentials for the registration
-  SMTP_PASS / SMTP_FROM           verification email. SMTP_PORT 465 uses implicit
-                                  SSL; 587 uses STARTTLS. SMTP_FROM overrides the
-                                  visible From address (defaults to SMTP_USER).
-                                  When SMTP_USER / SMTP_PASS are unset, email
-                                  verification is disabled and new accounts are
-                                  created already-verified (local dev / tests).
-  FRONTEND_URL                  — public origin of the SPA, used to build the
-                                  {FRONTEND_URL}/verify-email?token=... link in
-                                  the verification email. Defaults to the local
-                                  Vite dev server.
 """
 
 import os
@@ -68,14 +57,6 @@ class Settings(BaseSettings):
 
     CORS_ORIGINS: str = "*"
 
-    # ── Email verification (Gmail SMTP) ──────────────────────────────────────
-    SMTP_HOST: str = "smtp.gmail.com"
-    SMTP_PORT: int = 465
-    SMTP_USER: str = ""
-    SMTP_PASS: str = ""
-    SMTP_FROM: str = ""  # visible From address; falls back to SMTP_USER
-    FRONTEND_URL: str = "http://localhost:5173"
-
     # Deploy fingerprint (all optional; empty in local dev).
     RAILWAY_GIT_COMMIT_SHA: str = ""
     RAILWAY_GIT_BRANCH: str = ""
@@ -98,18 +79,6 @@ class Settings(BaseSettings):
         if v.startswith("postgres://"):
             v = "postgresql://" + v[len("postgres://"):]
         return v
-
-    @property
-    def email_verification_active(self) -> bool:
-        """True only when Gmail SMTP credentials are present. When False, the
-        registration flow skips the email and marks new users verified so local
-        dev / CI keeps working without SMTP secrets."""
-        return bool(self.SMTP_USER and self.SMTP_PASS)
-
-    @property
-    def frontend_base_url(self) -> str:
-        """FRONTEND_URL without a trailing slash."""
-        return self.FRONTEND_URL.rstrip("/") or "http://localhost:5173"
 
     @property
     def cors_origins_list(self) -> list[str]:

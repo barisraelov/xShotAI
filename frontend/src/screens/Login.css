@@ -119,33 +119,6 @@
 .pw-req--met { color: var(--green); }
 .pw-req--unmet { color: var(--red); opacity: 0.9; }
 
-/* ── /verify-email screen ── */
-.verify-status {
-  margin-top: 16px;
-  font-size: 0.95rem;
-  line-height: 1.55;
-  color: var(--text-muted);
-}
-.verify-badge {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
-  margin-top: 24px;
-  border-radius: 50%;
-  font-size: 1.5rem;
-  font-weight: 700;
-}
-.verify-badge--ok {
-  color: var(--green);
-  background: rgba(52, 211, 153, 0.14);
-}
-.verify-badge--bad {
-  color: var(--red);
-  background: rgba(248, 113, 113, 0.14);
-}
-
 /* Tighten the shared error box when it sits inside the auth form */
 .auth-form .error-box {
   margin: 2px 0 0;

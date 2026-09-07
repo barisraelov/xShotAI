@@ -28,12 +28,6 @@ class UserOut(BaseModel):
     email: str
     username: str
     created_at: datetime
-    is_verified: bool = True
-
-
-class MessageResult(BaseModel):
-    """Simple `{ "detail": "..." }` body for status-only endpoints."""
-    detail: str
 
 
 class JobOut(BaseModel):

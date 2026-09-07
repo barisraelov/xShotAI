@@ -50,13 +50,6 @@ class User(Base):
     hashed_password = Column(String, nullable=False)
     created_at      = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
 
-    # Email verification (added with the Gmail-SMTP verification flow).
-    # `verification_token` is a URL-safe random string cleared once the address
-    # is confirmed; `verification_token_expires_at` is 24h after generation.
-    is_verified                   = Column(Boolean, nullable=False, default=False)
-    verification_token            = Column(String, nullable=True, index=True)
-    verification_token_expires_at = Column(DateTime(timezone=True), nullable=True)
-
 
 class Job(Base):
     __tablename__ = "jobs"

@@ -56,8 +56,6 @@ export default function Register({ navigate }) {
   const [showConfirm, setShowConfirm] = useState(false)
   const [error, setError] = useState(null)
   const [loading, setLoading] = useState(false)
-  // Set once registration succeeds and a verification email has been sent.
-  const [pendingEmail, setPendingEmail] = useState(null)
 
   const passwordsMismatch =
     confirmPassword.length > 0 && password !== confirmPassword
@@ -93,58 +91,13 @@ export default function Register({ navigate }) {
     setError(null)
     setLoading(true)
     try {
-      const outcome = await register({
-        email: email.trim(),
-        username: username.trim(),
-        password,
-      })
-      if (outcome && outcome.verified === false) {
-        // Verification email sent — show the "check your inbox" state.
-        setPendingEmail(outcome.email)
-      } else {
-        // Verification disabled server-side — register() already logged us in.
-        navigate('dashboard')
-      }
+      // register() creates the account and logs in, returning a token.
+      await register({ email: email.trim(), username: username.trim(), password })
+      navigate('dashboard')
     } catch (err) {
       setError(err.message)
       setLoading(false)
     }
-  }
-
-  if (pendingEmail) {
-    return (
-      <div className="screen-enter auth-screen">
-        <div className="top-bar">
-          <Logo onClick={() => navigate('dashboard')} />
-        </div>
-
-        <div className="auth-head">
-          <h1>Check your inbox</h1>
-          <p>
-            We sent a verification link to <strong>{pendingEmail}</strong>. Click
-            it to activate your account, then log in. The link expires in 24
-            hours.
-          </p>
-        </div>
-
-        <p className="auth-field-hint" style={{ color: 'var(--text-muted)', opacity: 1 }}>
-          Didn't get it? Check your spam folder — the sender is the xShotAI team.
-        </p>
-
-        <button
-          type="button"
-          className="btn btn-primary"
-          style={{ marginTop: 18 }}
-          onClick={() => navigate('login')}
-        >
-          Go to Log In
-        </button>
-
-        <button type="button" className="auth-back" onClick={() => navigate('welcome')}>
-          ← Back
-        </button>
-      </div>
-    )
   }
 
   return (

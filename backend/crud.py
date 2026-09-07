@@ -6,8 +6,7 @@ The ORM model `Session` shadows sqlalchemy's `Session` type, so db-handle
 parameters are typed with the `DbSession` alias below.
 """
 
-import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from sqlalchemy import select
@@ -15,13 +14,6 @@ from sqlalchemy.orm import Session as DbSession
 
 from models import Job, LiveSession, LiveShot, Session, User
 from schemas import UserCreate
-
-VERIFICATION_TOKEN_TTL = timedelta(hours=24)
-
-
-def _new_verification_token() -> str:
-    """A cryptographically secure, URL-safe verification token."""
-    return secrets.token_urlsafe(32)
 
 
 # ── Jobs ─────────────────────────────────────────────────────────────────────
@@ -112,56 +104,19 @@ def get_session(db: DbSession, session_id: str) -> Optional[Session]:
 
 # ── Users ────────────────────────────────────────────────────────────────────
 
-def create_user(
-    db: DbSession, user: UserCreate, *, require_verification: bool = False
-) -> User:
-    """Hash the password and insert a new user row.
-
-    When `require_verification` is True the row starts unverified with a
-    24-hour verification token; the caller is responsible for emailing it.
-    When False (SMTP not configured — local dev / tests) the account is
-    created already verified with no token.
-    """
+def create_user(db: DbSession, user: UserCreate) -> User:
+    """Hash the password and insert a new user row."""
     from auth import hash_password  # local import avoids an auth <-> crud cycle
-
-    token = _new_verification_token() if require_verification else None
-    expires_at = (
-        datetime.now(timezone.utc) + VERIFICATION_TOKEN_TTL
-        if require_verification
-        else None
-    )
 
     row = User(
         email=user.email,
         username=user.username,
         hashed_password=hash_password(user.password),
-        is_verified=not require_verification,
-        verification_token=token,
-        verification_token_expires_at=expires_at,
     )
     db.add(row)
     db.commit()
     db.refresh(row)
     return row
-
-
-def get_user_by_verification_token(db: DbSession, token: str) -> Optional[User]:
-    """The user holding this pending verification token, or None."""
-    if not token:
-        return None
-    return db.scalars(
-        select(User).where(User.verification_token == token)
-    ).first()
-
-
-def mark_user_verified(db: DbSession, user: User) -> User:
-    """Flip is_verified on and clear the token + its expiry."""
-    user.is_verified = True
-    user.verification_token = None
-    user.verification_token_expires_at = None
-    db.commit()
-    db.refresh(user)
-    return user
 
 
 def get_user_by_email(db: DbSession, email: str) -> Optional[User]:
