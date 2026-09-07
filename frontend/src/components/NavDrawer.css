@@ -1,9 +1,12 @@
-/* ── Hamburger trigger (rendered by App, fixed to the frame's top-left) ── */
+/* ── Hamburger trigger (rendered by App, pinned to the frame's top-left) ── */
+/* `absolute`, not `fixed`: it sits in the header area and scrolls away with
+   the page instead of floating over the session cards. `.app-frame` is the
+   positioned ancestor. */
 .nav-hamburger {
-  position: fixed;
+  position: absolute;
   top: 12px;
-  left: max(10px, calc(50% - 195px + 12px));
-  z-index: 130;
+  left: 14px;
+  z-index: 5;
   width: 40px;
   height: 40px;
   display: flex;
