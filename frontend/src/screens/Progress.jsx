@@ -43,13 +43,38 @@ function yAt(pct) {
   return PAD.t + (1 - pct / 100) * PLOT_H
 }
 
-// Up to `max` evenly-spaced indices from [0, n-1], always including both ends.
-function pickTicks(n, max = 5) {
-  if (n <= 0) return []
-  if (n <= max) return Array.from({ length: n }, (_, i) => i)
-  const set = new Set()
-  for (let k = 0; k < max; k++) set.add(Math.round((k / (max - 1)) * (n - 1)))
-  return [...set].sort((a, b) => a - b)
+// Accuracy as a clean 0–100 number. A session with no attempts (0/0) — or a
+// null / NaN backend value — is 0%, never null, so the line/area never breaks.
+function pctOrZero(made, attempts) {
+  const a = Number(attempts) || 0
+  if (a <= 0) return 0
+  const v = ((Number(made) || 0) / a) * 100
+  return Number.isFinite(v) ? Math.max(0, Math.min(100, v)) : 0
+}
+
+// How many sessions apart the X-axis text labels are, from the active window:
+//   Last 5 / 10 / 20  -> every 2   (2, 4, 6, …)
+//   Last 100          -> every 10  (10, 20, 30, …)
+//   All               -> ceil(n / 10)  → ~10 labels spread across the axis
+function tickInterval(windowSize, n) {
+  if (n <= 0) return 1
+  if (windowSize === 'all') return Math.max(1, Math.ceil(n / 10))
+  if (windowSize <= 20) return 2
+  if (windowSize <= 100) return 10
+  return Math.max(1, Math.ceil(n / 10))
+}
+
+// Indices (0-based) whose session number (i+1) lands on the interval. Every
+// point still exists on the line; only these render axis text. Always labels at
+// least the last point so a tiny window isn't blank.
+function xLabelIndices(windowSize, n) {
+  const step = tickInterval(windowSize, n)
+  const idxs = []
+  for (let i = 0; i < n; i += 1) {
+    if ((i + 1) % step === 0) idxs.push(i)
+  }
+  if (idxs.length === 0 && n > 0) idxs.push(n - 1)
+  return idxs
 }
 
 // Feedback lines often embed session-specific numbers (accuracy%, streak
@@ -134,39 +159,34 @@ export default function Progress({ navigate }) {
     return [...sessions].slice(0, n).reverse()
   }, [sessions, windowSize])
 
-  // One point per session in the window. value is null (gap in the line) when
-  // that session has no data for the selected zone (or 0 shots overall).
+  // One point per session in the window. `value` is ALWAYS a 0–100 number
+  // (0% when that session has no attempts for the selected zone / overall), so
+  // the line and shaded area stay contiguous across every session. `attempts`
+  // is what tells "no data" apart from a genuine 0% — used for the empty state.
   const points = useMemo(() => {
     return chronological.map(s => {
       if (zone === 'overall') {
         const attempts = Number(s.total_shots) || 0
-        return attempts > 0
-          ? { session: s, value: s.accuracy_pct, made: s.made, attempts }
-          : { session: s, value: null, made: null, attempts: null }
+        const made = Number(s.made) || 0
+        return { session: s, value: pctOrZero(made, attempts), made, attempts }
       }
       const zones = details[s.id]?.zone_aggregates
       const entry = Array.isArray(zones) ? zones.find(z => z?.polygon_id === zone) : null
-      return entry && entry.attempts > 0
-        ? { session: s, value: entry.accuracy_pct, made: entry.made, attempts: entry.attempts }
-        : { session: s, value: null, made: null, attempts: null }
+      const attempts = Number(entry?.attempts) || 0
+      const made = Number(entry?.made) || 0
+      return { session: s, value: pctOrZero(made, attempts), made, attempts }
     })
   }, [chronological, zone, details])
 
   const n = points.length
-  const coords = points.map((p, i) => ({ ...p, x: xAt(i, n), y: p.value == null ? null : yAt(p.value) }))
+  const coords = points.map((p, i) => ({ ...p, x: xAt(i, n), y: yAt(p.value) }))
 
-  // Contiguous runs of non-null points -> one polyline/area per run, so a
-  // session with no data for the selected zone breaks the line cleanly.
-  const segments = []
-  let run = []
-  coords.forEach(c => {
-    if (c.value == null) { if (run.length) segments.push(run); run = [] }
-    else run.push(c)
-  })
-  if (run.length) segments.push(run)
+  // No nulls any more -> the whole window is one contiguous run. Kept as a list
+  // so the render path (area needs >= 2 points) stays unchanged.
+  const segments = coords.length ? [coords] : []
 
-  const hasAnyData = coords.some(c => c.value != null)
-  const ticks = pickTicks(n)
+  const hasAnyData = coords.some(c => c.attempts > 0)
+  const ticks = xLabelIndices(windowSize, n)
   const active = activeIdx != null ? coords[activeIdx] : null
 
   // Coaching Patterns — aggregated across every fetched session regardless of
@@ -270,7 +290,8 @@ export default function Progress({ navigate }) {
                   </g>
                 ))}
 
-                {/* X tick labels (sparse — full date lives in the tooltip) */}
+                {/* X tick labels: sequential session numbers, sparse by
+                    interval. The full date/time lives in the hover tooltip. */}
                 {ticks.map(i => {
                   const c = coords[i]
                   const anchor = i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'
@@ -280,7 +301,7 @@ export default function Progress({ navigate }) {
                       x={c.x} y={VB_H - 6}
                       textAnchor={anchor} fontSize="7" fill="rgba(255,255,255,0.35)"
                     >
-                      {formatShortDate(c.session.created_at)}
+                      {i + 1}
                     </text>
                   )
                 })}
@@ -307,8 +328,8 @@ export default function Progress({ navigate }) {
                   )
                 })}
 
-                {/* Data points */}
-                {coords.map((c, i) => c.value == null ? null : (
+                {/* Data points — one per session (present for hover even when 0%) */}
+                {coords.map((c, i) => (
                   <circle
                     key={i}
                     className={`progress-dot${activeIdx === i ? ' active' : ''}`}
@@ -326,7 +347,9 @@ export default function Progress({ navigate }) {
                   className={`progress-tooltip${(active.y / VB_H) < 0.22 ? ' flip-below' : ''}`}
                   style={{ left: `${(active.x / VB_W) * 100}%`, top: `${(active.y / VB_H) * 100}%` }}
                 >
-                  <div className="progress-tooltip-date">{formatShortDate(active.session.created_at)}</div>
+                  <div className="progress-tooltip-date">
+                    Session {activeIdx + 1} · {formatShortDate(active.session.created_at)}
+                  </div>
                   <div className="progress-tooltip-stat">
                     {active.made}/{active.attempts} · {Math.round(active.value)}%
                   </div>
