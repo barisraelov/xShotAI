@@ -1,7 +1,8 @@
 /* ── "Did you know?" fact card ── */
 .fact-card {
+  position: relative;
   margin: 4px 20px 18px;
-  padding: 14px 16px;
+  padding: 14px 16px 18px;
   display: flex;
   align-items: center;
   gap: 12px;
@@ -23,7 +24,32 @@
   font-weight: 600;
   line-height: 1.55;
   color: var(--text);
+  animation: factSwap 0.4s ease;
 }
+
+@keyframes factSwap {
+  from { opacity: 0; transform: translateY(5px); }
+  to   { opacity: 1; transform: none; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .fact-card-text { animation: none; }
+}
+
+.fact-card-dots {
+  position: absolute;
+  right: 12px;
+  bottom: 8px;
+  display: flex;
+  gap: 4px;
+}
+.fact-card-dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.22);
+  transition: background 0.3s ease;
+}
+.fact-card-dot.is-active { background: var(--orange); }
 
 /* ── Section title with a trailing link ── */
 .section-title-row {

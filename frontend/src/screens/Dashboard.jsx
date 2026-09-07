@@ -3,10 +3,11 @@ import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
 import { getLevelInfo } from '../utils/levels'
-import { pickInsight } from '../utils/insights'
+import { computeInsights, INSIGHT_FALLBACK } from '../utils/insights'
 import './Dashboard.css'
 
 const RECENT_LIMIT = 5
+const FACT_ROTATE_MS = 7000
 
 // e.g. "Sep 4, 2026 · 3:42 PM" — date + time, both in the viewer's locale and
 // local timezone (Date parses the UTC `created_at` and formats it locally).
@@ -32,9 +33,25 @@ export default function Dashboard({ navigate, result }) {
   const totalMadeShots = sessions.reduce((sum, s) => sum + (Number(s?.made) || 0), 0)
   const levelInfo = getLevelInfo(totalMadeShots)
 
-  // One "did you know?" fact, picked once per history load (falls back to an
-  // encouraging note for < 2 sessions or when no fact criteria are met).
-  const insight = useMemo(() => pickInsight(sessions), [sessions])
+  // All "did you know?" facts that apply, rotated through automatically. Falls
+  // back to a single encouraging note for < 2 sessions / no matching criteria.
+  const facts = useMemo(() => {
+    const list = computeInsights(sessions)
+    return list.length ? list : [INSIGHT_FALLBACK]
+  }, [sessions])
+  const [factIdx, setFactIdx] = useState(0)
+
+  useEffect(() => {
+    setFactIdx(0)
+    if (facts.length <= 1) return undefined
+    const id = setInterval(
+      () => setFactIdx(i => (i + 1) % facts.length),
+      FACT_ROTATE_MS,
+    )
+    return () => clearInterval(id)
+  }, [facts])
+
+  const activeFact = facts[Math.min(factIdx, facts.length - 1)]
 
   const recentSessions = sessions.slice(0, RECENT_LIMIT)
 
@@ -109,7 +126,17 @@ export default function Dashboard({ navigate, result }) {
       {isAuthed() && !histLoading && (
         <div className="fact-card">
           <span className="fact-card-icon" aria-hidden="true">🏀</span>
-          <p className="fact-card-text">{insight}</p>
+          <p className="fact-card-text" key={activeFact}>{activeFact}</p>
+          {facts.length > 1 && (
+            <div className="fact-card-dots" aria-hidden="true">
+              {facts.map((_, i) => (
+                <span
+                  key={i}
+                  className={`fact-card-dot${i === factIdx ? ' is-active' : ''}`}
+                />
+              ))}
+            </div>
+          )}
         </div>
       )}
 
