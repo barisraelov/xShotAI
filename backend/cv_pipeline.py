@@ -377,6 +377,7 @@ def _run_state_machine_with_fallback(
     model: Any,
     frame_width: int,
     hoop_accepted_count: int,
+    fps: float = 30.0,
 ) -> list[dict]:
     """
     Re-run the shot state machine over the stored ball detections from the main
@@ -435,7 +436,7 @@ def _run_state_machine_with_fallback(
                     is_made, score_detail = entry_make_miss.score_shot(
                         video_path, model, ball_pos, hoop_pos,
                         up_frame, down_frame, frame_count, frame_width,
-                        hoop_accepted_count,
+                        hoop_accepted_count, fps=fps,
                     )
                     ball_window = [
                         p for p in ball_pos if up_frame <= p[2] <= down_frame
@@ -681,7 +682,7 @@ def _run_pipeline_inner_legacy(video_path: str, court_mapper: Optional[CourtMapp
                     shot_data = build_shot_data(
                         str(path), model, ev_dict,
                         up_frame, down_frame, frame_count, frame_width,
-                        hoop_accepted_count,
+                        hoop_accepted_count, fps=fps,
                     )
                     is_made, score_detail = entry_make_miss.score_shot_from_data(
                         shot_data, frame_width, hoop_accepted_count,
@@ -733,6 +734,7 @@ def _run_pipeline_inner_legacy(video_path: str, court_mapper: Optional[CourtMapp
                 model,
                 frame_width,
                 hoop_accepted_count,
+                fps=fps,
             )
             hoop_fallback_used = True
             # Populate all_hoop_pos from the fallback so stable_hoop and the

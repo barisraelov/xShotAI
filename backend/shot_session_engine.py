@@ -143,10 +143,12 @@ class ShotSessionEngine:
         person_model: Any = None,
         collect_weak_detections: bool = True,
         backend_dir: Optional[Path] = None,
+        fps: float = 30.0,
     ) -> None:
         self._model = model
         self._frame_width = frame_width
         self._total_frames = total_frames
+        self._fps = float(fps or 30.0)
         self._video_path = video_path
         self._person_model = person_model
         self._collect_weak_detections = collect_weak_detections
@@ -374,6 +376,7 @@ class ShotSessionEngine:
                     self.hoop_accepted_count,
                     person_model=self._person_model,
                     video_path=self._video_path,
+                    fps=self._fps,
                 )
                 is_made, score_detail = entry_make_miss.score_shot_from_data(
                     shot_data, self._frame_width, self.hoop_accepted_count,
