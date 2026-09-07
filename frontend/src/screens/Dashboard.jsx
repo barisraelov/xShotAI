@@ -33,6 +33,13 @@ export default function Dashboard({ navigate, result }) {
   const totalMadeShots = sessions.reduce((sum, s) => sum + (Number(s?.made) || 0), 0)
   const levelInfo = getLevelInfo(totalMadeShots)
 
+  // "Last analysis" is only valid for the *current* context: a signed-in user
+  // must actually own at least one saved session (guards against a previous
+  // account's `result` lingering in App state after a logout / switch).
+  const showLastAnalysis = Boolean(
+    summary && (isAuthed() ? sessions.length > 0 : true),
+  )
+
   // All "did you know?" facts that apply, rotated through automatically. Falls
   // back to a single encouraging note for < 2 sessions / no matching criteria.
   const facts = useMemo(() => {
@@ -146,7 +153,7 @@ export default function Dashboard({ navigate, result }) {
         </div>
       )}
 
-      {summary && (
+      {showLastAnalysis && (
         <>
           <div className="section-title">Last analysis</div>
           <div className="stat-grid-2">

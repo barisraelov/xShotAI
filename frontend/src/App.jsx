@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import './index.css'
 
 import { isAuthed, logout, me, setUnauthorizedHandler } from './auth'
@@ -98,6 +98,18 @@ const INITIAL_STATE = {
   sessionDate: null,
 }
 
+// Per-user transient analysis state. Wiped on every logout / account switch so
+// one account's "Last analysis" can never bleed into the next.
+const CLEARED_ANALYSIS_STATE = {
+  result: null,
+  jobId: null,
+  file: null,
+  error: null,
+  liveDiagnostics: null,
+  sessionId: null,
+  sessionDate: null,
+}
+
 // Views with no hamburger / footer chrome: pre-auth screens, full-screen flows,
 // and the standalone placeholder pages (they carry their own back button).
 const NO_NAV_VIEWS = new Set([
@@ -146,11 +158,16 @@ export default function App() {
   }
 
   function handleLogout() {
-    logout()
+    logout()             // clears the token from localStorage
     setMenuOpen(false)
     setUser(null)
     setSessions([])
-    navigate('welcome')
+    setState(s => ({
+      ...s,
+      view: 'welcome',
+      prevView: s.view,
+      ...CLEARED_ANALYSIS_STATE,
+    }))
   }
 
   // Any authenticated request that comes back 401 (expired/invalid token) sends
@@ -176,8 +193,17 @@ export default function App() {
   }, [])
 
   // Load the profile + session history that the side drawer needs. Re-runs
-  // whenever auth flips (login / logout).
+  // whenever auth flips (login / logout). When `authed` genuinely changes we
+  // also wipe the cached analysis so a previous account's data can't linger
+  // (comparing to the previous value keeps the initial / StrictMode mounts —
+  // and ?demo= previews — untouched).
+  const prevAuthed = useRef(authed)
   useEffect(() => {
+    if (prevAuthed.current !== authed) {
+      setState(s => ({ ...s, ...CLEARED_ANALYSIS_STATE }))
+    }
+    prevAuthed.current = authed
+
     if (!authed) {
       setUser(null)
       setSessions([])
