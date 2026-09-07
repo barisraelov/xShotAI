@@ -1,10 +1,10 @@
 /**
  * "Did you know?" facts derived from a user's saved session history.
  *
- * `computeInsights(sessions)` returns every Hebrew fact string whose criteria
- * are met (possibly empty). `pickInsight(sessions)` returns one of them at
- * random, or the encouraging fallback when none apply / there's too little
- * history. Everything is null / NaN / 0-0 safe.
+ * `computeInsights(sessions)` returns every fact string whose criteria are met
+ * (possibly empty). `pickInsight(sessions)` returns one of them at random, or
+ * the encouraging fallback when none apply / there's too little history.
+ * Everything is null / NaN / 0-0 safe.
  *
  * `sessions` items are SessionSummary shaped:
  *   { id, created_at, total_shots, made, missed, accuracy_pct }
@@ -15,7 +15,8 @@ const MONTHS_SHORT = [
   'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
 ]
 
-export const INSIGHT_FALLBACK = 'המשך להתאמן כדי לחשוף עובדות ושיאים אישיים!'
+export const INSIGHT_FALLBACK =
+  'Keep putting up shots to unlock personal milestones and insights! 🚀'
 
 // A finite, non-negative integer count — anything else (null, NaN, "x",
 // Infinity, negatives) collapses to 0.
@@ -83,7 +84,9 @@ export function computeInsights(sessions) {
     }
   }
   if (bestDay && bestDayAttempts > 0) {
-    facts.push(`בתאריך ${dayKeyLabel(bestDay)} זרקת ${bestDayAttempts} פעמים שזה הכי הרבה`)
+    facts.push(
+      `On ${dayKeyLabel(bestDay)}, you took ${bestDayAttempts} shots — your highest volume yet! 🎯`,
+    )
   }
 
   // 2 — best accuracy among sessions with at least 5 attempts.
@@ -95,14 +98,18 @@ export function computeInsights(sessions) {
     if (Number.isFinite(pct) && pct > bestPct) bestPct = pct
   }
   if (bestPct >= 0) {
-    facts.push(`האחוז הגבוה ביותר שזרקת עם לפחות 5 זריקות הוא ${Math.round(bestPct)}%`)
+    facts.push(
+      `Your best shooting performance with 5+ attempts is ${Math.round(bestPct)}%! 🏀`,
+    )
   }
 
   // 3 — cumulative shooting % above the NBA True Shooting benchmark (58%).
   if (sumAttempts > 0) {
     const overall = (sumMade / sumAttempts) * 100
     if (Number.isFinite(overall) && overall > 58) {
-      facts.push('הידעת שאחוז הזריקות שלך גבוה מה-NBA (ממוצע True Shooting של 58%)')
+      facts.push(
+        'Did you know? Your shooting accuracy is higher than the NBA average (58% True Shooting) 🌟',
+      )
     }
   }
 
@@ -117,7 +124,7 @@ export function computeInsights(sessions) {
     cursor = shiftDay(cursor, -1)
   }
   if (streak >= 2) {
-    facts.push(`אתה נמצא כבר ברצף של ${streak} ימים של זריקות לסל 🔥`)
+    facts.push(`You're on a ${streak}-day shooting streak! Keep the flame going 🔥`)
   }
 
   return facts

@@ -107,7 +107,7 @@ export default function Dashboard({ navigate, result }) {
       </button>
 
       {isAuthed() && !histLoading && (
-        <div className="fact-card" dir="rtl">
+        <div className="fact-card">
           <span className="fact-card-icon" aria-hidden="true">🏀</span>
           <p className="fact-card-text">{insight}</p>
         </div>
