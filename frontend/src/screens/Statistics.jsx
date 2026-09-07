@@ -162,7 +162,6 @@ export default function Statistics({ navigate }) {
     <div className="screen-enter">
       <div className="top-bar">
         <Logo onClick={() => navigate('dashboard')} />
-        <div className="top-actions"><div className="avatar" /></div>
       </div>
 
       <h1 className="page-title">Statistics</h1>

@@ -186,7 +186,6 @@ export default function Progress({ navigate }) {
     <div className="screen-enter">
       <div className="top-bar">
         <Logo onClick={() => navigate('dashboard')} />
-        <div className="top-actions"><div className="avatar" /></div>
       </div>
 
       <h1 className="page-title">Progress</h1>

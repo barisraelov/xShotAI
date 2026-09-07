@@ -59,9 +59,6 @@ export default function Dashboard({ navigate, result }) {
     <div className="screen-enter">
       <div className="top-bar">
         <Logo onClick={() => navigate('dashboard')} />
-        <div className="top-actions">
-          <div className="avatar" />
-        </div>
       </div>
 
       {isAuthed() && (
