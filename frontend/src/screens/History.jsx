@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
@@ -36,6 +36,10 @@ export default function History({ navigate }) {
   const [filterDate, setFilterDate] = useState('') // '' = all days
   const [openingId, setOpeningId] = useState(null)
   const [openError, setOpenError] = useState(null)
+
+  // Only auto-pick the default date once; after that the user's choice
+  // (including clearing back to "all") is left alone.
+  const didInitDate = useRef(false)
 
   const todayKey = localDayKey(new Date().toISOString())
 
@@ -75,6 +79,14 @@ export default function History({ navigate }) {
         }
       })
   }, [sessions])
+
+  // Default the view to the most recent day that has sessions. dayGroups is
+  // sorted newest-day-first, so [0].key is that date. Runs once.
+  useEffect(() => {
+    if (didInitDate.current || dayGroups.length === 0) return
+    didInitDate.current = true
+    setFilterDate(dayGroups[0].key)
+  }, [dayGroups])
 
   const visibleGroups = filterDate
     ? dayGroups.filter(g => g.key === filterDate)
