@@ -3,6 +3,7 @@ import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
 import { isAuthed, logout } from '../auth'
 import { getSession, getSessions } from '../api'
+import { getLevelInfo } from '../utils/levels'
 import './Dashboard.css'
 
 // e.g. "Sep 4, 2026 · 3:42 PM" — date + time, both in the viewer's locale and
@@ -23,6 +24,11 @@ export default function Dashboard({ navigate, result }) {
   const [histError, setHistError] = useState(null)   // list load — shown as a muted note
   const [openError, setOpenError] = useState(null)   // row click — actionable, shown prominently
   const [openingId, setOpeningId] = useState(null)
+
+  // Level is derived from cumulative made shots across every saved session.
+  // Empty / still-loading history just yields Level 1 (0 shots) — never throws.
+  const totalMadeShots = sessions.reduce((sum, s) => sum + (Number(s?.made) || 0), 0)
+  const levelInfo = getLevelInfo(totalMadeShots)
 
   useEffect(() => {
     if (!isAuthed()) return
@@ -66,6 +72,37 @@ export default function Dashboard({ navigate, result }) {
           <div className="avatar" />
         </div>
       </div>
+
+      {isAuthed() && (
+        <div className="level-card">
+          <div className="level-card-top">
+            <span className="level-badge">LVL {levelInfo.level}</span>
+            <span className="level-title">{levelInfo.title}</span>
+            {levelInfo.isMaxLevel && <span className="level-max">MAX</span>}
+          </div>
+
+          <div
+            className="level-bar"
+            role="progressbar"
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={levelInfo.progressPercent}
+          >
+            <div
+              className="level-bar-fill"
+              style={{ width: `${levelInfo.progressPercent}%` }}
+            />
+          </div>
+
+          <div className="level-progress-text">
+            {levelInfo.isMaxLevel
+              ? `Max level · ${levelInfo.totalMadeShots} made shots`
+              : `${levelInfo.currentLevelShots} / ${
+                  levelInfo.currentLevelShots + levelInfo.nextLevelShots
+                } shots to Level ${levelInfo.level + 1}`}
+          </div>
+        </div>
+      )}
 
       <button className="big-cta" onClick={() => navigate('upload')}>
         <span>▶ Upload training video</span>
