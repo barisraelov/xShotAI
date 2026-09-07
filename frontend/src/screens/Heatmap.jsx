@@ -1,6 +1,5 @@
 import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
-import BottomNav from '../components/BottomNav'
 import './Heatmap.css'
 
 export default function Heatmap({ navigate, result }) {
@@ -8,7 +7,6 @@ export default function Heatmap({ navigate, result }) {
     return (
       <div className="screen-enter">
         <div style={{ padding: '40px 20px', color: 'var(--text-muted)' }}>No analysis data.</div>
-        <BottomNav active="heatmap" navigate={navigate} />
       </div>
     )
   }
@@ -36,7 +34,6 @@ export default function Heatmap({ navigate, result }) {
         <span className="legend-swatch" style={{ background: 'rgba(248,113,113,0.5)', marginLeft: 12 }} /> &lt;35%
       </div>
 
-      <BottomNav active="heatmap" navigate={navigate} />
     </div>
   )
 }

@@ -1,0 +1,30 @@
+.app-footer {
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  padding: 20px 20px calc(20px + var(--safe-bottom));
+  border-top: 1px solid rgba(255, 255, 255, 0.05);
+}
+
+.app-footer-link {
+  border: none;
+  background: none;
+  padding: 4px 2px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.78rem;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+.app-footer-link:hover {
+  color: var(--orange);
+  text-decoration: underline;
+}
+
+.app-footer-dot {
+  color: var(--text-muted);
+  opacity: 0.5;
+  font-size: 0.78rem;
+}

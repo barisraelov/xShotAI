@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
 import VisualFeedback, { VisualSessionSummary } from '../components/VisualFeedback'
@@ -112,7 +111,6 @@ export default function Session({ navigate, result, liveDiagnostics }) {
     return (
       <div className="screen-enter">
         <div style={{ padding: '40px 20px', color: 'var(--text-muted)' }}>No session data.</div>
-        <BottomNav active="dashboard" navigate={navigate} />
       </div>
     )
   }
@@ -320,7 +318,6 @@ export default function Session({ navigate, result, liveDiagnostics }) {
         </div>
       )}
 
-      <BottomNav active="session" navigate={navigate} />
     </div>
   )
 }

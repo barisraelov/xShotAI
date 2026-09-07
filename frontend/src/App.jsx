@@ -1,20 +1,26 @@
 import { useEffect, useState } from 'react'
 import './index.css'
 
-import { isAuthed, setUnauthorizedHandler } from './auth'
+import { isAuthed, logout, me, setUnauthorizedHandler } from './auth'
+import { getSessions } from './api'
+import { getLevelInfo } from './utils/levels'
 
-import Welcome    from './screens/Welcome'
-import Login      from './screens/Login'
-import Register   from './screens/Register'
-import Dashboard  from './screens/Dashboard'
-import Upload     from './screens/Upload'
-import Live       from './screens/Live'
-import Calibrate  from './screens/Calibrate'
-import Analyzing  from './screens/Analyzing'
-import Session    from './screens/Session'
-import Heatmap    from './screens/Heatmap'
-import Progress   from './screens/Progress'
-import Statistics from './screens/Statistics'
+import NavDrawer  from './components/NavDrawer'
+import AppFooter  from './components/AppFooter'
+
+import Welcome     from './screens/Welcome'
+import Login       from './screens/Login'
+import Register    from './screens/Register'
+import Dashboard   from './screens/Dashboard'
+import Upload      from './screens/Upload'
+import Live        from './screens/Live'
+import Calibrate   from './screens/Calibrate'
+import Analyzing   from './screens/Analyzing'
+import Session     from './screens/Session'
+import Heatmap     from './screens/Heatmap'
+import Progress    from './screens/Progress'
+import Statistics  from './screens/Statistics'
+import Placeholder from './screens/Placeholder'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
 const DEMO_STUB = {
@@ -86,14 +92,20 @@ const INITIAL_STATE = {
   liveDiagnostics: null,
 }
 
-const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate', 'live'])
+// Views with no hamburger / footer chrome: pre-auth screens, full-screen flows,
+// and the standalone placeholder pages (they carry their own back button).
+const NO_NAV_VIEWS = new Set([
+  'welcome', 'login', 'register', 'analyzing', 'calibrate', 'live',
+  'terms', 'contact', 'profile',
+])
 
 // Views that require an authenticated user. Navigating to any of these while
 // logged out (e.g. the header logo's onClick, which targets 'dashboard') is
-// redirected to the login screen. The ?demo= dev preview is exempt.
+// redirected to the login screen. `terms` / `contact` stay public. The ?demo=
+// dev preview is exempt.
 const PROTECTED_VIEWS = new Set([
   'dashboard', 'upload', 'live', 'calibrate', 'analyzing',
-  'session', 'heatmap', 'progress', 'statistics',
+  'session', 'heatmap', 'progress', 'statistics', 'profile',
 ])
 
 function isBlockedWhileLoggedOut(view) {
@@ -102,6 +114,11 @@ function isBlockedWhileLoggedOut(view) {
 
 export default function App() {
   const [state, setState] = useState(INITIAL_STATE)
+  const [menuOpen, setMenuOpen] = useState(false)
+  const [user, setUser] = useState(null)          // { username, email } | null
+  const [sessions, setSessions] = useState([])    // for the drawer's tier badge
+
+  const authed = isAuthed()
 
   function navigate(view, patch = {}) {
     // Route protection: a logged-out user can never reach an authenticated-only
@@ -111,6 +128,14 @@ export default function App() {
       return
     }
     setState(s => ({ ...s, view, ...patch }))
+  }
+
+  function handleLogout() {
+    logout()
+    setMenuOpen(false)
+    setUser(null)
+    setSessions([])
+    navigate('welcome')
   }
 
   // Any authenticated request that comes back 401 (expired/invalid token) sends
@@ -128,7 +153,29 @@ export default function App() {
     }
   }, [state.view])
 
+  // Load the profile + session history that the side drawer needs. Re-runs
+  // whenever auth flips (login / logout).
+  useEffect(() => {
+    if (!authed) {
+      setUser(null)
+      setSessions([])
+      return undefined
+    }
+    let cancelled = false
+    me()
+      .then(u => { if (!cancelled) setUser(u) })
+      .catch(() => {})
+    getSessions()
+      .then(list => { if (!cancelled) setSessions(Array.isArray(list) ? list : []) })
+      .catch(() => {})
+    return () => { cancelled = true }
+  }, [authed])
+
   const noNav = NO_NAV_VIEWS.has(state.view)
+  const showChrome = !noNav && authed
+
+  const totalMadeShots = sessions.reduce((sum, s) => sum + (Number(s?.made) || 0), 0)
+  const levelInfo = authed ? getLevelInfo(totalMadeShots) : null
 
   const screenProps = {
     navigate,
@@ -141,6 +188,26 @@ export default function App() {
 
   return (
     <div className={`app-frame${noNav ? ' no-nav' : ''}${state.view === 'live' ? ' live-mode' : ''}`}>
+      {showChrome && (
+        <button
+          type="button"
+          className="nav-hamburger"
+          onClick={() => setMenuOpen(true)}
+          aria-label="Open menu"
+          aria-expanded={menuOpen}
+        >
+          <svg
+            width="20" height="20" viewBox="0 0 24 24" fill="none"
+            stroke="currentColor" strokeWidth="2" strokeLinecap="round"
+            aria-hidden="true"
+          >
+            <line x1="3" y1="6" x2="21" y2="6" />
+            <line x1="3" y1="12" x2="21" y2="12" />
+            <line x1="3" y1="18" x2="21" y2="18" />
+          </svg>
+        </button>
+      )}
+
       {state.view === 'welcome'    && <Welcome    {...screenProps} />}
       {state.view === 'login'      && <Login      {...screenProps} />}
       {state.view === 'register'   && <Register   {...screenProps} />}
@@ -153,6 +220,44 @@ export default function App() {
       {state.view === 'heatmap'    && <Heatmap    {...screenProps} />}
       {state.view === 'progress'   && <Progress   {...screenProps} />}
       {state.view === 'statistics' && <Statistics {...screenProps} />}
+      {state.view === 'profile'    && (
+        <Placeholder
+          {...screenProps}
+          icon="👤"
+          title="Profile"
+          blurb="Coming Soon: Profile Settings"
+        />
+      )}
+      {state.view === 'terms'      && (
+        <Placeholder
+          {...screenProps}
+          icon="📄"
+          title="Terms & Conditions"
+          blurb="Terms and Conditions — Coming soon"
+        />
+      )}
+      {state.view === 'contact'    && (
+        <Placeholder
+          {...screenProps}
+          icon="✉️"
+          title="Contact Us"
+          blurb="Contact Us — Coming soon"
+        />
+      )}
+
+      {showChrome && <AppFooter navigate={navigate} />}
+
+      {!noNav && (
+        <NavDrawer
+          open={menuOpen}
+          onClose={() => setMenuOpen(false)}
+          navigate={navigate}
+          activeView={state.view}
+          user={user}
+          levelInfo={levelInfo}
+          onLogout={handleLogout}
+        />
+      )}
     </div>
   )
 }

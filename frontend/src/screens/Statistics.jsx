@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import BottomNav from '../components/BottomNav'
 import CourtMap from '../components/CourtMap'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
@@ -255,7 +254,6 @@ export default function Statistics({ navigate }) {
         </>
       )}
 
-      <BottomNav active="statistics" navigate={navigate} />
     </div>
   )
 }

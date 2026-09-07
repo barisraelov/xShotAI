@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useState } from 'react'
-import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
@@ -385,7 +384,6 @@ export default function Progress({ navigate }) {
         </>
       )}
 
-      <BottomNav active="progress" navigate={navigate} />
     </div>
   )
 }

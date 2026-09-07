@@ -1,5 +1,4 @@
 import { useRef, useState } from 'react'
-import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
 import { postAnalyze } from '../api'
 import { isAuthed } from '../auth'
@@ -104,7 +103,6 @@ export default function Upload({ navigate }) {
         </button>
       </div>
 
-      <BottomNav active="upload" navigate={navigate} />
     </div>
   )
 }

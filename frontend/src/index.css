@@ -32,15 +32,21 @@ body {
   max-width: 390px;
   min-height: 100vh;
   background: linear-gradient(180deg, #121214 0%, var(--bg) 45%);
-  padding-bottom: 88px;
+  padding-bottom: 24px;
   position: relative;
+  display: flex;
+  flex-direction: column;
 }
+
+/* The active screen grows so the persistent footer sits at the bottom. */
+.app-frame > .screen-enter { flex: 1 0 auto; }
 
 .app-frame.no-nav {
   padding-bottom: 24px;
 }
 
 .app-frame.live-mode {
+  display: block;
   max-width: none;
   width: 100%;
   min-height: 100dvh;
@@ -151,34 +157,6 @@ body {
   opacity: 0.5;
   cursor: not-allowed;
 }
-
-/* ── Bottom nav ── */
-.bottom-nav {
-  position: fixed;
-  bottom: 0;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 100%;
-  max-width: 390px;
-  background: var(--bg-elevated);
-  border-top: 1px solid rgba(255, 255, 255, 0.06);
-  display: flex;
-  justify-content: space-around;
-  padding: 10px 8px calc(10px + var(--safe-bottom));
-  z-index: 100;
-}
-
-.bottom-nav button {
-  flex: 1;
-  border: none;
-  background: none;
-  color: var(--text-muted);
-  font-size: 0.65rem;
-  cursor: pointer;
-  padding: 6px 4px;
-}
-
-.bottom-nav button.active { color: var(--orange); }
 
 /* ── Section title ── */
 .section-title {

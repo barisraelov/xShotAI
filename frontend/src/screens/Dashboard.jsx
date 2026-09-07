@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react'
-import BottomNav from '../components/BottomNav'
 import Logo from '../components/Logo'
-import { isAuthed, logout } from '../auth'
+import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
 import { getLevelInfo } from '../utils/levels'
 import './Dashboard.css'
@@ -42,11 +41,6 @@ export default function Dashboard({ navigate, result }) {
     return () => { cancelled = true }
   }, [])
 
-  function handleLogout() {
-    logout()
-    navigate('welcome')
-  }
-
   async function openSession(id) {
     if (openingId) return
     setOpeningId(id)
@@ -66,9 +60,6 @@ export default function Dashboard({ navigate, result }) {
       <div className="top-bar">
         <Logo onClick={() => navigate('dashboard')} />
         <div className="top-actions">
-          {isAuthed() && (
-            <button className="logout-btn" onClick={handleLogout}>Log out</button>
-          )}
           <div className="avatar" />
         </div>
       </div>
@@ -179,7 +170,6 @@ export default function Dashboard({ navigate, result }) {
         </>
       )}
 
-      <BottomNav active="dashboard" navigate={navigate} />
     </div>
   )
 }
