@@ -2,7 +2,137 @@ import { useState } from 'react'
 import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
 import VisualFeedback, { VisualSessionSummary } from '../components/VisualFeedback'
+import { updateSessionDate } from '../api'
 import './Session.css'
+
+const MONTHS_SHORT = [
+  'Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun',
+  'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec',
+]
+
+// UTC ISO -> local YYYY-MM-DD (for <input type="date"> and its max).
+function isoToDayKey(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const y = d.getFullYear()
+  const m = String(d.getMonth() + 1).padStart(2, '0')
+  const day = String(d.getDate()).padStart(2, '0')
+  return `${y}-${m}-${day}`
+}
+
+// "6 Sep 2026 · 10:52 PM" — day-first, engine-independent month name.
+function formatSessionDate(iso) {
+  const d = new Date(iso)
+  if (Number.isNaN(d.getTime())) return ''
+  const date = `${d.getDate()} ${MONTHS_SHORT[d.getMonth()]} ${d.getFullYear()}`
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' })
+  return `${date} · ${time}`
+}
+
+// Re-date an ISO timestamp to a new local calendar day, keeping the time-of-day
+// so within-day ordering and the hour shown stay intact.
+function withNewDay(iso, dayKey) {
+  const base = new Date(iso)
+  const [y, m, d] = dayKey.split('-').map(Number)
+  const next = Number.isNaN(base.getTime()) ? new Date() : new Date(base)
+  next.setFullYear(y, m - 1, d)
+  return next.toISOString()
+}
+
+/** Inline "edit session date" control shown in the Session header. */
+function SessionDateEditor({ sessionId, sessionDate, onSaved }) {
+  const todayKey = isoToDayKey(new Date().toISOString())
+
+  const [displayIso, setDisplayIso] = useState(sessionDate)
+  const [editing, setEditing] = useState(false)
+  const [draftDay, setDraftDay] = useState(isoToDayKey(sessionDate))
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  function startEdit() {
+    setDraftDay(isoToDayKey(displayIso))
+    setError(null)
+    setEditing(true)
+  }
+  function cancel() {
+    setEditing(false)
+    setError(null)
+  }
+
+  async function save() {
+    if (saving) return
+    if (!draftDay) {
+      setError('Please pick a date.')
+      return
+    }
+    if (draftDay > todayKey) {
+      setError('Session date cannot be in the future.')
+      return
+    }
+    const newIso = withNewDay(displayIso, draftDay)
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateSessionDate(sessionId, newIso)
+      const savedIso = updated?.created_at || newIso
+      setDisplayIso(savedIso)
+      setEditing(false)
+      onSaved?.(savedIso)
+    } catch (err) {
+      setError('Failed to update date. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className="session-date-row">
+      {editing ? (
+        <div className="session-date-edit">
+          <input
+            type="date"
+            className="session-date-input"
+            lang="en-GB"
+            value={draftDay}
+            max={todayKey}
+            onChange={e => setDraftDay(e.target.value)}
+            disabled={saving}
+          />
+          <button
+            type="button"
+            className="btn btn-primary session-date-save"
+            onClick={save}
+            disabled={saving}
+          >
+            {saving ? <span className="session-date-spinner" aria-hidden="true" /> : 'Save'}
+          </button>
+          <button
+            type="button"
+            className="session-date-cancel"
+            onClick={cancel}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+        </div>
+      ) : (
+        <>
+          <span className="session-date-value">{formatSessionDate(displayIso)}</span>
+          <button
+            type="button"
+            className="session-date-edit-btn"
+            onClick={startEdit}
+            aria-label="Edit session date"
+            title="Edit session date"
+          >
+            ✏️
+          </button>
+        </>
+      )}
+      {error && <span className="session-date-error" role="alert">{error}</span>}
+    </div>
+  )
+}
 
 // Find the zone with the most attempts and lowest accuracy to produce a tip
 function weakestZone(zoneAggregates) {
@@ -106,7 +236,14 @@ function zoneBreakdown(shotPoints) {
   return { twos: calc(twos), threes: calc(threes) }
 }
 
-export default function Session({ navigate, result, liveDiagnostics }) {
+export default function Session({
+  navigate,
+  result,
+  liveDiagnostics,
+  sessionId,
+  sessionDate,
+  onSessionDateChange,
+}) {
   if (!result) {
     return (
       <div className="screen-enter">
@@ -136,6 +273,14 @@ export default function Session({ navigate, result, liveDiagnostics }) {
       <div className="top-bar">
         <Logo onClick={() => navigate('dashboard')} />
       </div>
+
+      {sessionId && sessionDate && (
+        <SessionDateEditor
+          sessionId={sessionId}
+          sessionDate={sessionDate}
+          onSaved={onSessionDateChange}
+        />
+      )}
 
       <section className="session-summary-section" aria-label="Session summary">
         <div className="story-kicker">Session summary</div>

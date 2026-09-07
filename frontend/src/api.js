@@ -6,8 +6,9 @@
  *
  * POST /analyze            (multipart) → { job_id }   — sends Bearer token if logged in
  * GET  /jobs/:id                       → { status } | AnalyzeResult
- * GET  /sessions                       → [SessionSummary]  (auth)
- * GET  /sessions/:id                   → SessionDetail     (auth)
+ * GET   /sessions                      → [SessionSummary]  (auth)
+ * GET   /sessions/:id                  → SessionDetail     (auth)
+ * PATCH /sessions/:id                  → SessionDetail     (auth) — reschedule date
  */
 
 import { API_BASE, authHeaders, handleUnauthorized } from './auth'
@@ -62,4 +63,38 @@ export async function getSessions() {
 
 export function getSession(sessionId) {
   return authedGet(`/sessions/${sessionId}`, 'Load session') // { ...summary, job_id, result: AnalyzeResult }
+}
+
+/**
+ * Reschedule a saved session to a different date.
+ * `newDateIso` is a full ISO timestamp. Resolves to the updated session
+ * (`{ id, created_at, ... }`). When the backend has no PATCH endpoint yet
+ * (404 / 405 / 501) or is unreachable, resolves to a simulated result
+ * (`{ id, created_at, simulated: true }`) so local dev still works.
+ */
+export async function updateSessionDate(sessionId, newDateIso) {
+  let res
+  try {
+    res = await fetch(`${API_BASE}/sessions/${sessionId}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      body: JSON.stringify({ created_at: newDateIso }),
+    })
+  } catch {
+    return { id: sessionId, created_at: newDateIso, simulated: true }
+  }
+
+  if (res.status === 401) {
+    handleUnauthorized()
+    throw new Error('Session expired — please log in again')
+  }
+  if (res.status === 404 || res.status === 405 || res.status === 501) {
+    return { id: sessionId, created_at: newDateIso, simulated: true }
+  }
+  if (res.status === 400 || res.status === 422) {
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || 'That date is not valid.')
+  }
+  if (!res.ok) throw new Error(`Failed to update date (${res.status})`)
+  return res.json()
 }

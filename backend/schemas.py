@@ -58,6 +58,11 @@ class SessionDetail(SessionSummary):
     result: dict
 
 
+class SessionDateUpdate(BaseModel):
+    """PATCH /sessions/{id} body — reschedule a saved session to another date."""
+    created_at: datetime
+
+
 class Token(BaseModel):
     access_token: str
     token_type: str = "bearer"

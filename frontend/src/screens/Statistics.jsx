@@ -151,7 +151,13 @@ export default function Statistics({ navigate }) {
     try {
       const data = await getSession(id)
       // Same shape a fresh analysis produces — Session.jsx just works.
-      navigate('session', { result: data.result, jobId: data.id, error: null })
+      navigate('session', {
+        result: data.result,
+        jobId: data.id,
+        sessionId: data.id,
+        sessionDate: data.created_at,
+        error: null,
+      })
     } catch (err) {
       setOpenBestError("Couldn't open that session. Please try again.")
       setOpeningBest(false)

@@ -102,6 +102,20 @@ def get_session(db: DbSession, session_id: str) -> Optional[Session]:
     return db.get(Session, session_id)
 
 
+def update_session_created_at(
+    db: DbSession, session_id: str, new_created_at: datetime
+) -> Optional[Session]:
+    """Move a saved session to a different date/time. Returns the updated row,
+    or None if the id is unknown. Ownership is checked by the caller."""
+    row = db.get(Session, session_id)
+    if row is None:
+        return None
+    row.created_at = new_created_at
+    db.commit()
+    db.refresh(row)
+    return row
+
+
 # ── Users ────────────────────────────────────────────────────────────────────
 
 def create_user(db: DbSession, user: UserCreate) -> User:

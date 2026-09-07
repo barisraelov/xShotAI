@@ -106,7 +106,13 @@ export default function History({ navigate }) {
     try {
       const data = await getSession(id)
       // Same payload shape a fresh analysis produces — session/heatmap just work.
-      navigate('session', { result: data.result, jobId: data.id, error: null })
+      navigate('session', {
+        result: data.result,
+        jobId: data.id,
+        sessionId: data.id,
+        sessionDate: data.created_at,
+        error: null,
+      })
     } catch (err) {
       setOpenError("Couldn't open that session. Please try again.")
       setOpeningId(null)

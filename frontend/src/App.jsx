@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import './index.css'
 
 import { isAuthed, logout, me, setUnauthorizedHandler } from './auth'
@@ -94,6 +94,8 @@ const INITIAL_STATE = {
   error:  null,
   file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
   liveDiagnostics: null,
+  sessionId:   null,  // set when opening a *saved* session (enables "edit date")
+  sessionDate: null,
 }
 
 // Views with no hamburger / footer chrome: pre-auth screens, full-screen flows,
@@ -131,7 +133,16 @@ export default function App() {
       setState(s => ({ ...s, view: 'login', prevView: s.view, error: null }))
       return
     }
-    setState(s => ({ ...s, view, prevView: s.view, ...patch }))
+    setState(s => {
+      const next = { ...s, view, prevView: s.view, ...patch }
+      // Opening the Session view without an explicit saved-session id clears
+      // any stale one so the "edit date" control never targets the wrong row.
+      if (view === 'session' && !('sessionId' in patch)) {
+        next.sessionId = null
+        next.sessionDate = null
+      }
+      return next
+    })
   }
 
   function handleLogout() {
@@ -157,6 +168,13 @@ export default function App() {
     }
   }, [state.view])
 
+  const refreshSessions = useCallback(() => {
+    if (!isAuthed()) return
+    getSessions()
+      .then(list => setSessions(Array.isArray(list) ? list : []))
+      .catch(() => {})
+  }, [])
+
   // Load the profile + session history that the side drawer needs. Re-runs
   // whenever auth flips (login / logout).
   useEffect(() => {
@@ -175,6 +193,17 @@ export default function App() {
     return () => { cancelled = true }
   }, [authed])
 
+  // Reflect a session's new date everywhere: update the row we hold, and
+  // refetch so the drawer badge / any next Dashboard-History mount is current.
+  function handleSessionDateChange(newIso) {
+    setState(s =>
+      s.sessionId
+        ? { ...s, sessionDate: newIso }
+        : s,
+    )
+    refreshSessions()
+  }
+
   const noNav = NO_NAV_VIEWS.has(state.view)
   const showChrome = !noNav && authed
 
@@ -189,6 +218,9 @@ export default function App() {
     file:   state.file,
     liveDiagnostics: state.liveDiagnostics,
     prevView: state.prevView,
+    sessionId:   state.sessionId,
+    sessionDate: state.sessionDate,
+    onSessionDateChange: handleSessionDateChange,
     user,
     levelInfo,
   }
