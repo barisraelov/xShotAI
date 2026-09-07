@@ -3,18 +3,19 @@ import './index.css'
 
 import { isAuthed, setUnauthorizedHandler } from './auth'
 
-import Welcome    from './screens/Welcome'
-import Login      from './screens/Login'
-import Register   from './screens/Register'
-import Dashboard  from './screens/Dashboard'
-import Upload     from './screens/Upload'
-import Live       from './screens/Live'
-import Calibrate  from './screens/Calibrate'
-import Analyzing  from './screens/Analyzing'
-import Session    from './screens/Session'
-import Heatmap    from './screens/Heatmap'
-import Progress   from './screens/Progress'
-import Statistics from './screens/Statistics'
+import Welcome     from './screens/Welcome'
+import Login       from './screens/Login'
+import Register    from './screens/Register'
+import VerifyEmail from './screens/VerifyEmail'
+import Dashboard   from './screens/Dashboard'
+import Upload      from './screens/Upload'
+import Live        from './screens/Live'
+import Calibrate   from './screens/Calibrate'
+import Analyzing   from './screens/Analyzing'
+import Session     from './screens/Session'
+import Heatmap     from './screens/Heatmap'
+import Progress    from './screens/Progress'
+import Statistics  from './screens/Statistics'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
 const DEMO_STUB = {
@@ -77,16 +78,27 @@ function demoView() {
   return p === 'session' || p === 'heatmap' ? p : null
 }
 
+// Deep link from the verification email: /verify-email?token=... . No router
+// here — App.jsx just renders the VerifyEmail screen when the path matches.
+function verifyEmailToken() {
+  const path = window.location.pathname.replace(/\/+$/, '')
+  if (path !== '/verify-email') return null
+  return new URLSearchParams(window.location.search).get('token') || ''
+}
+
+const _verifyToken = verifyEmailToken()
+
 const INITIAL_STATE = {
-  view:   demoView() ?? (isAuthed() ? 'dashboard' : 'welcome'),
+  view:   _verifyToken !== null ? 'verify-email' : (demoView() ?? (isAuthed() ? 'dashboard' : 'welcome')),
   jobId:  demoView() ? 'demo' : null,
   result: demoView() ? DEMO_STUB : null,
   error:  null,
   file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
   liveDiagnostics: null,
+  verifyToken: _verifyToken,
 }
 
-const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'analyzing', 'calibrate', 'live'])
+const NO_NAV_VIEWS = new Set(['welcome', 'login', 'register', 'verify-email', 'analyzing', 'calibrate', 'live'])
 
 export default function App() {
   const [state, setState] = useState(INITIAL_STATE)
@@ -111,13 +123,15 @@ export default function App() {
     error:  state.error,
     file:   state.file,
     liveDiagnostics: state.liveDiagnostics,
+    verifyToken: state.verifyToken,
   }
 
   return (
     <div className={`app-frame${noNav ? ' no-nav' : ''}${state.view === 'live' ? ' live-mode' : ''}`}>
-      {state.view === 'welcome'    && <Welcome    {...screenProps} />}
-      {state.view === 'login'      && <Login      {...screenProps} />}
-      {state.view === 'register'   && <Register   {...screenProps} />}
+      {state.view === 'welcome'      && <Welcome     {...screenProps} />}
+      {state.view === 'login'        && <Login       {...screenProps} />}
+      {state.view === 'register'     && <Register    {...screenProps} />}
+      {state.view === 'verify-email' && <VerifyEmail {...screenProps} />}
       {state.view === 'dashboard'  && <Dashboard  {...screenProps} />}
       {state.view === 'upload'     && <Upload     {...screenProps} />}
       {state.view === 'live'       && <Live       {...screenProps} />}

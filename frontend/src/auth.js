@@ -62,6 +62,11 @@ export async function login(identifier, password) {
   })
 
   if (res.status === 401) throw new Error('Invalid email or password')
+  if (res.status === 403) {
+    // Account exists and the password is right, but the email is unverified.
+    const data = await res.json().catch(() => ({}))
+    throw new Error(data.detail || 'Please verify your email before logging in')
+  }
   if (!res.ok) throw new Error(`Login failed (${res.status})`)
 
   const data = await res.json()
@@ -70,9 +75,16 @@ export async function login(identifier, password) {
 }
 
 /**
- * Create an account, then log in with the same credentials so the caller ends
- * up authenticated. Throws with the backend's message on 400 (email/username
+ * Create an account. Throws with the backend's message on 400 (email/username
  * taken), or a validation message on 422.
+ *
+ * Resolves to `{ verified, email }`:
+ *   verified === false → a confirmation email was sent; the caller should show a
+ *                        "check your inbox" state and NOT treat the user as
+ *                        logged in (login is blocked until they verify).
+ *   verified === true  → the backend has email verification disabled (no SMTP
+ *                        configured), the account is already active, and this
+ *                        function has logged the user in.
  */
 export async function register({ email, username, password }) {
   const res = await fetch(`${API_BASE}/auth/register`, {
@@ -88,8 +100,30 @@ export async function register({ email, username, password }) {
   if (res.status === 422) throw new Error('Please enter a valid email and a password')
   if (!res.ok) throw new Error(`Sign up failed (${res.status})`)
 
-  // Account created — get a token straight away.
-  return login(email, password)
+  const user = await res.json().catch(() => ({}))
+  if (user && user.is_verified === false) {
+    return { verified: false, email }
+  }
+
+  // Verification disabled server-side — account is live, log straight in.
+  await login(email, password)
+  return { verified: true, email }
+}
+
+/**
+ * Confirm an email address from the link in the verification email.
+ * Resolves to the success message, or throws with the backend's error detail
+ * when the token is missing / invalid / expired.
+ */
+export async function verifyEmail(token) {
+  const res = await fetch(
+    `${API_BASE}/auth/verify-email?token=${encodeURIComponent(token)}`,
+  )
+  const data = await res.json().catch(() => ({}))
+  if (!res.ok) {
+    throw new Error(data.detail || 'Verification link is invalid or has expired')
+  }
+  return data.detail || 'Email verified successfully'
 }
 
 /** Current user profile, or throws (401 handled by the caller / api layer). */

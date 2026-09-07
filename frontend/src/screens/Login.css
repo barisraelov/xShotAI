@@ -51,6 +51,107 @@
 }
 .auth-field input:disabled { opacity: 0.55; }
 
+/* ── Password field with show/hide toggle ── */
+.auth-input-wrap { position: relative; display: flex; }
+.auth-input-wrap input { padding-right: 46px; }
+
+.auth-pw-toggle {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  background: none;
+  border: none;
+  border-radius: 8px;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.auth-pw-toggle:hover {
+  color: var(--text);
+  background: rgba(255, 255, 255, 0.06);
+}
+.auth-pw-toggle.is-active { color: var(--orange); }
+.auth-pw-toggle:disabled { opacity: 0.4; cursor: default; }
+
+/* ── Inline validation hint (subtle, dark-theme friendly) ── */
+.auth-field-hint {
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--red);
+  opacity: 0.85;
+}
+
+/* ── Password strength checklist ── */
+.pw-reqs {
+  list-style: none;
+  margin: 2px 0 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.pw-req {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.78rem;
+  letter-spacing: 0.02em;
+  color: var(--text-muted);
+  transition: color 0.15s ease;
+}
+.pw-req-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  font-size: 0.72rem;
+  line-height: 1;
+}
+.pw-req--pending { opacity: 0.6; }
+.pw-req--met { color: var(--green); }
+.pw-req--unmet { color: var(--red); opacity: 0.9; }
+
+/* ── /verify-email screen ── */
+.verify-status {
+  margin-top: 16px;
+  font-size: 0.95rem;
+  line-height: 1.55;
+  color: var(--text-muted);
+}
+.verify-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 52px;
+  height: 52px;
+  margin-top: 24px;
+  border-radius: 50%;
+  font-size: 1.5rem;
+  font-weight: 700;
+}
+.verify-badge--ok {
+  color: var(--green);
+  background: rgba(52, 211, 153, 0.14);
+}
+.verify-badge--bad {
+  color: var(--red);
+  background: rgba(248, 113, 113, 0.14);
+}
+
+/* Tighten the shared error box when it sits inside the auth form */
+.auth-form .error-box {
+  margin: 2px 0 0;
+  padding: 12px 14px;
+}
+
 .auth-form .btn { margin-top: 6px; }
 
 .auth-alt {
