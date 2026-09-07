@@ -1,42 +1,59 @@
-/* ── Top controls: date filter + clear ── */
-.hist-controls {
+/* ── Top filter: horizontally scrollable day pills ── */
+.hist-datebar {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 20px 10px;
+  gap: 8px;
+  padding: 4px 20px 12px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-behavior: smooth;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none; /* Firefox */
 }
+.hist-datebar::-webkit-scrollbar { display: none; } /* WebKit */
 
-.hist-date {
-  padding: 9px 12px;
+.hist-chip {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 8px 14px;
   background: var(--bg-card);
   border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 10px;
+  border-radius: 12px;
   color: var(--text);
   font: inherit;
-  font-size: 0.9rem;
-  color-scheme: dark; /* native calendar popup + spinners in dark */
+  cursor: pointer;
+  white-space: nowrap;
+  -webkit-tap-highlight-color: transparent;
+  transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
 }
-.hist-date:focus {
+.hist-chip:hover { border-color: rgba(255, 107, 44, 0.4); }
+.hist-chip:focus-visible {
   outline: none;
   border-color: var(--orange);
   box-shadow: 0 0 0 3px var(--orange-dim);
 }
-
-.hist-clear {
-  padding: 9px 12px;
-  background: none;
-  border: 1px solid rgba(255, 255, 255, 0.12);
-  border-radius: 10px;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
+.hist-chip.is-active {
+  border-color: var(--orange);
+  background: var(--orange-dim);
+  box-shadow: 0 0 0 3px var(--orange-dim);
 }
-.hist-clear:hover {
-  color: var(--text);
-  border-color: rgba(255, 107, 44, 0.4);
+
+.hist-chip-label {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+.hist-chip.is-active .hist-chip-label { color: var(--orange); }
+
+.hist-chip-sub {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--text-muted);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .hist-datebar { scroll-behavior: auto; }
 }
 
 .hist-summary {

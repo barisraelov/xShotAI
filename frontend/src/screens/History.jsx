@@ -28,6 +28,15 @@ function dayLabel(key) {
   return `${d} ${MONTHS_SHORT[m - 1]} ${y}`
 }
 
+// Compact chip label for the date bar: "Today" / "Yesterday" / "6 Sep".
+function chipLabel(key, todayKey, yesterdayKey) {
+  if (key === todayKey) return 'Today'
+  if (key === yesterdayKey) return 'Yesterday'
+  const [y, m, d] = String(key).split('-').map(Number)
+  if (!y || !m || !d || m < 1 || m > 12) return key
+  return `${d} ${MONTHS_SHORT[m - 1]}`
+}
+
 function formatTime(iso) {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return ''
@@ -46,8 +55,10 @@ export default function History({ navigate }) {
   // Only auto-pick the default date once; after that the user's choice
   // (including clearing back to "all") is left alone.
   const didInitDate = useRef(false)
+  const activeChipRef = useRef(null)
 
   const todayKey = localDayKey(new Date().toISOString())
+  const yesterdayKey = localDayKey(new Date(Date.now() - 86_400_000).toISOString())
 
   useEffect(() => {
     if (!isAuthed()) return undefined
@@ -98,6 +109,15 @@ export default function History({ navigate }) {
     ? dayGroups.filter(g => g.key === filterDate)
     : dayGroups
   const visibleCount = visibleGroups.reduce((n, g) => n + g.sessions.length, 0)
+
+  // Keep the selected day pill in view as the filter changes (e.g. the
+  // one-time default jump to the most recent day, or picking an older day
+  // that sits off the right edge of the scroll bar).
+  useEffect(() => {
+    activeChipRef.current?.scrollIntoView({
+      behavior: 'smooth', inline: 'center', block: 'nearest',
+    })
+  }, [filterDate])
 
   async function openSession(id) {
     if (openingId) return
@@ -152,27 +172,47 @@ export default function History({ navigate }) {
 
       {ready && sessions.length > 0 && (
         <>
-          <div className="hist-controls">
-            <input
-              type="date"
-              className="hist-date"
-              // Hint browsers to render the native control as DD/MM/YYYY rather
-              // than the en-US MM/DD/YYYY default.
-              lang="en-GB"
-              aria-label="Filter sessions by date"
-              value={filterDate}
-              max={todayKey}
-              onChange={e => setFilterDate(e.target.value)}
-            />
-            {filterDate && (
-              <button
-                type="button"
-                className="hist-clear"
-                onClick={() => setFilterDate('')}
-              >
-                ✕ Clear filter
-              </button>
-            )}
+          <div
+            className="hist-datebar"
+            role="tablist"
+            aria-label="Filter sessions by day"
+          >
+            <button
+              type="button"
+              role="tab"
+              aria-selected={!filterDate}
+              className={`hist-chip hist-chip--all${!filterDate ? ' is-active' : ''}`}
+              ref={!filterDate ? activeChipRef : null}
+              onClick={() => setFilterDate('')}
+            >
+              <span className="hist-chip-label">All</span>
+              <span className="hist-chip-sub">
+                {sessions.length} total
+              </span>
+            </button>
+
+            {dayGroups.map(g => {
+              const active = filterDate === g.key
+              const n = g.sessions.length
+              return (
+                <button
+                  key={g.key}
+                  type="button"
+                  role="tab"
+                  aria-selected={active}
+                  className={`hist-chip${active ? ' is-active' : ''}`}
+                  ref={active ? activeChipRef : null}
+                  onClick={() => setFilterDate(g.key)}
+                >
+                  <span className="hist-chip-label">
+                    {chipLabel(g.key, todayKey, yesterdayKey)}
+                  </span>
+                  <span className="hist-chip-sub">
+                    {n} session{n === 1 ? '' : 's'}
+                  </span>
+                </button>
+              )
+            })}
           </div>
 
           <p className="hist-summary">
