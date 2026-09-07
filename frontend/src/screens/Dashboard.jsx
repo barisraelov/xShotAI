@@ -1,9 +1,12 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
 import { getLevelInfo } from '../utils/levels'
+import { pickInsight } from '../utils/insights'
 import './Dashboard.css'
+
+const RECENT_LIMIT = 5
 
 // e.g. "Sep 4, 2026 · 3:42 PM" — date + time, both in the viewer's locale and
 // local timezone (Date parses the UTC `created_at` and formats it locally).
@@ -28,6 +31,12 @@ export default function Dashboard({ navigate, result }) {
   // Empty / still-loading history just yields Level 1 (0 shots) — never throws.
   const totalMadeShots = sessions.reduce((sum, s) => sum + (Number(s?.made) || 0), 0)
   const levelInfo = getLevelInfo(totalMadeShots)
+
+  // One "did you know?" fact, picked once per history load (falls back to an
+  // encouraging note for < 2 sessions or when no fact criteria are met).
+  const insight = useMemo(() => pickInsight(sessions), [sessions])
+
+  const recentSessions = sessions.slice(0, RECENT_LIMIT)
 
   useEffect(() => {
     if (!isAuthed()) return
@@ -97,6 +106,13 @@ export default function Dashboard({ navigate, result }) {
         <span>→</span>
       </button>
 
+      {isAuthed() && !histLoading && (
+        <div className="fact-card" dir="rtl">
+          <span className="fact-card-icon" aria-hidden="true">🏀</span>
+          <p className="fact-card-text">{insight}</p>
+        </div>
+      )}
+
       {summary && (
         <>
           <div className="section-title">Last analysis</div>
@@ -131,7 +147,18 @@ export default function Dashboard({ navigate, result }) {
 
       {isAuthed() && (
         <>
-          <div className="section-title">Past sessions</div>
+          <div className="section-title-row">
+            <span className="section-title">Past sessions</span>
+            {sessions.length > 0 && (
+              <button
+                type="button"
+                className="section-link"
+                onClick={() => navigate('history')}
+              >
+                View all in History →
+              </button>
+            )}
+          </div>
 
           {histLoading && <p className="dashboard-hint">Loading history…</p>}
           {openError && <div className="error-box">{openError}</div>}
@@ -146,7 +173,7 @@ export default function Dashboard({ navigate, result }) {
 
           {sessions.length > 0 && (
             <ul className="history-list">
-              {sessions.map(s => (
+              {recentSessions.map(s => (
                 <li key={s.id}>
                   <button
                     className="history-row"
@@ -156,7 +183,7 @@ export default function Dashboard({ navigate, result }) {
                     <span className="history-date">{formatDate(s.created_at)}</span>
                     <span className="history-stat">
                       {s.made}/{s.total_shots}
-                      <span className="history-pct"> · {Math.round(s.accuracy_pct)}%</span>
+                      <span className="history-pct"> · {Math.round(Number(s.accuracy_pct) || 0)}%</span>
                     </span>
                     <span className="history-go">{openingId === s.id ? '…' : '→'}</span>
                   </button>

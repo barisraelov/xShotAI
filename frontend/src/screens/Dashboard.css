@@ -1,3 +1,53 @@
+/* ── "Did you know?" fact card ── */
+.fact-card {
+  margin: 4px 20px 18px;
+  padding: 14px 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: var(--bg-card);
+  border: 1px solid rgba(255, 107, 44, 0.25);
+  border-radius: var(--radius);
+  box-shadow: 0 8px 26px rgba(255, 107, 44, 0.07);
+}
+.fact-card-icon {
+  flex-shrink: 0;
+  font-size: 1.5rem;
+  line-height: 1;
+}
+.fact-card-text {
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+  font-size: 0.9rem;
+  font-weight: 600;
+  line-height: 1.55;
+  color: var(--text);
+}
+
+/* ── Section title with a trailing link ── */
+.section-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 20px 10px;
+}
+.section-title-row .section-title { padding: 0; }
+.section-link {
+  flex-shrink: 0;
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--orange);
+  font: inherit;
+  font-size: 0.78rem;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.section-link:hover { text-decoration: underline; }
+
 /* ── User level & tier card ── */
 .level-card {
   margin: 4px 20px 16px;
