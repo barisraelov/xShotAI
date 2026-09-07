@@ -121,10 +121,24 @@
 .hist-row:hover { border-color: rgba(255, 107, 44, 0.4); }
 .hist-row:disabled { opacity: 0.6; cursor: default; }
 
-.hist-row-time {
+.hist-row-main {
   flex: 1;
   min-width: 0;
-  font-size: 0.92rem;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.hist-row-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.hist-row-time {
+  min-width: 0;
+  font-size: 0.8rem;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

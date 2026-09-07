@@ -94,8 +94,9 @@ const INITIAL_STATE = {
   error:  null,
   file:   null,   // holds the video File object during the upload→calibrate→analyzing flow
   liveDiagnostics: null,
-  sessionId:   null,  // set when opening a *saved* session (enables "edit date")
-  sessionDate: null,
+  sessionId:    null,  // set when opening a *saved* session (enables "edit date/title")
+  sessionDate:  null,
+  sessionTitle: null,
 }
 
 // Per-user transient analysis state. Wiped on every logout / account switch so
@@ -108,6 +109,7 @@ const CLEARED_ANALYSIS_STATE = {
   liveDiagnostics: null,
   sessionId: null,
   sessionDate: null,
+  sessionTitle: null,
 }
 
 // Views with no hamburger / footer chrome: pre-auth screens, full-screen flows,
@@ -148,10 +150,12 @@ export default function App() {
     setState(s => {
       const next = { ...s, view, prevView: s.view, ...patch }
       // Opening the Session view without an explicit saved-session id clears
-      // any stale one so the "edit date" control never targets the wrong row.
+      // any stale one so the "edit date/title" controls never target the
+      // wrong row.
       if (view === 'session' && !('sessionId' in patch)) {
         next.sessionId = null
         next.sessionDate = null
+        next.sessionTitle = null
       }
       return next
     })
@@ -230,6 +234,17 @@ export default function App() {
     refreshSessions()
   }
 
+  // Same, for a renamed session — keep the open Session view in sync and
+  // refetch so History cards / Dashboard recents show the new name.
+  function handleSessionTitleChange(newTitle) {
+    setState(s =>
+      s.sessionId
+        ? { ...s, sessionTitle: newTitle }
+        : s,
+    )
+    refreshSessions()
+  }
+
   const noNav = NO_NAV_VIEWS.has(state.view)
   const showChrome = !noNav && authed
 
@@ -244,9 +259,11 @@ export default function App() {
     file:   state.file,
     liveDiagnostics: state.liveDiagnostics,
     prevView: state.prevView,
-    sessionId:   state.sessionId,
-    sessionDate: state.sessionDate,
+    sessionId:    state.sessionId,
+    sessionDate:  state.sessionDate,
+    sessionTitle: state.sessionTitle,
     onSessionDateChange: handleSessionDateChange,
+    onSessionTitleChange: handleSessionTitleChange,
     user,
     levelInfo,
   }

@@ -9,7 +9,7 @@ parameters are typed with the `DbSession` alias below.
 from datetime import datetime, timezone
 from typing import Optional
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import Session as DbSession
 
 from models import Job, LiveSession, LiveShot, Session, User
@@ -72,9 +72,14 @@ def create_session(
     """Persist a completed AnalyzeResult to a user's history. Summary columns
     are derived from result["summary"]."""
     summary = result.get("summary") or {}
+    # Default label: "Session #N" where N counts this user's saved sessions.
+    prior = db.scalar(
+        select(func.count()).select_from(Session).where(Session.user_id == user_id)
+    ) or 0
     row = Session(
         user_id=user_id,
         job_id=job_id,
+        title=f"Session #{prior + 1}",
         total_shots=int(summary.get("total_shots", 0) or 0),
         made=int(summary.get("made", 0) or 0),
         missed=int(summary.get("missed", 0) or 0),
@@ -102,15 +107,23 @@ def get_session(db: DbSession, session_id: str) -> Optional[Session]:
     return db.get(Session, session_id)
 
 
-def update_session_created_at(
-    db: DbSession, session_id: str, new_created_at: datetime
+def update_session(
+    db: DbSession,
+    session_id: str,
+    *,
+    new_created_at: Optional[datetime] = None,
+    new_title: Optional[str] = None,
 ) -> Optional[Session]:
-    """Move a saved session to a different date/time. Returns the updated row,
-    or None if the id is unknown. Ownership is checked by the caller."""
+    """Edit a saved session's date and/or title. Only the fields passed as
+    non-None are changed. Returns the updated row, or None if the id is
+    unknown. Ownership is checked by the caller."""
     row = db.get(Session, session_id)
     if row is None:
         return None
-    row.created_at = new_created_at
+    if new_created_at is not None:
+        row.created_at = new_created_at
+    if new_title is not None:
+        row.title = new_title
     db.commit()
     db.refresh(row)
     return row

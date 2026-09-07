@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import Logo from '../components/Logo'
 import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
+import { sessionTitle } from '../utils/sessions'
 import './History.css'
 
 // created_at is a UTC ISO string; the date filter/grouping is by the viewer's
@@ -131,6 +132,7 @@ export default function History({ navigate }) {
         jobId: data.id,
         sessionId: data.id,
         sessionDate: data.created_at,
+        sessionTitle: data.title,
         error: null,
       })
     } catch (err) {
@@ -253,7 +255,10 @@ export default function History({ navigate }) {
                       onClick={() => openSession(s.id)}
                       disabled={!!openingId}
                     >
-                      <span className="hist-row-time">{formatTime(s.created_at)}</span>
+                      <span className="hist-row-main">
+                        <span className="hist-row-title">{sessionTitle(s)}</span>
+                        <span className="hist-row-time">{formatTime(s.created_at)}</span>
+                      </span>
                       <span className="hist-row-stat">
                         {s.made}/{s.total_shots}
                         <span className="hist-row-pct">

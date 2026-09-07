@@ -838,6 +838,72 @@
   .vf-card:nth-child(n) { grid-column: 1 / -1; }
 }
 
+/* ── Edit session title (header heading) ── */
+.session-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 20px 2px;
+}
+.session-title-value {
+  margin: 0;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.2;
+  color: var(--text);
+  word-break: break-word;
+}
+.session-title-edit {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+}
+.session-title-input {
+  flex: 1 1 200px;
+  min-width: 0;
+  padding: 8px 12px;
+  background: var(--bg);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 10px;
+  color: var(--text);
+  font: inherit;
+  font-size: 1.05rem;
+  font-weight: 700;
+  outline: none;
+}
+.session-title-input:focus {
+  border-color: var(--orange);
+  box-shadow: 0 0 0 3px var(--orange-dim);
+}
+.session-title-save {
+  flex: 0 0 auto;
+  min-width: 64px;
+  padding: 8px 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+.session-title-cancel {
+  flex: 0 0 auto;
+  padding: 8px 12px;
+  background: none;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+}
+.session-title-cancel:hover:not(:disabled) {
+  color: var(--text);
+  border-color: rgba(255, 107, 44, 0.4);
+}
+.session-title-cancel:disabled { opacity: 0.5; cursor: default; }
+
 /* ── Edit session date (header) ── */
 .session-date-row {
   display: flex;

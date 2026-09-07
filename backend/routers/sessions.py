@@ -3,7 +3,7 @@
 
   GET   /sessions              -> 200 list[SessionSummary]   (newest first)
   GET   /sessions/{session_id} -> 200 SessionDetail          (full AnalyzeResult)
-  PATCH /sessions/{session_id} -> 200 SessionDetail          (reschedule date)
+  PATCH /sessions/{session_id} -> 200 SessionDetail          (edit date / title)
 
 All are Bearer-protected. A session that exists but belongs to another user
 returns 404 (so ownership isn't leaked).
@@ -18,7 +18,7 @@ import crud
 from auth import get_current_user
 from db import get_db
 from models import User
-from schemas import SessionDateUpdate, SessionDetail, SessionSummary
+from schemas import SessionDetail, SessionSummary, SessionUpdate
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
 
@@ -46,22 +46,39 @@ def get_session(
 @router.patch("/{session_id}", response_model=SessionDetail)
 def update_session(
     session_id: str,
-    payload: SessionDateUpdate,
+    payload: SessionUpdate,
     current_user: User = Depends(get_current_user),
     db: DbSession = Depends(get_db),
 ):
-    """Reschedule a saved session to a different date. Only the owner may do
-    this; a future date is rejected."""
+    """Edit a saved session's date and/or title. Only the owner may do this;
+    a future date is rejected and a supplied title must be 1–60 chars once
+    trimmed."""
     session = crud.get_session(db, session_id)
     if session is None or session.user_id != current_user.id:
         raise HTTPException(status_code=404, detail="Session not found")
 
-    new_dt = payload.created_at
-    if new_dt.tzinfo is None:
-        new_dt = new_dt.replace(tzinfo=timezone.utc)
-    if new_dt > datetime.now(timezone.utc):
-        raise HTTPException(
-            status_code=400, detail="Session date cannot be in the future"
-        )
+    new_dt = None
+    if payload.created_at is not None:
+        new_dt = payload.created_at
+        if new_dt.tzinfo is None:
+            new_dt = new_dt.replace(tzinfo=timezone.utc)
+        if new_dt > datetime.now(timezone.utc):
+            raise HTTPException(
+                status_code=400, detail="Session date cannot be in the future"
+            )
 
-    return crud.update_session_created_at(db, session_id, new_dt)
+    new_title = None
+    if payload.title is not None:
+        new_title = payload.title.strip()
+        if not (1 <= len(new_title) <= 60):
+            raise HTTPException(
+                status_code=400,
+                detail="Session title must be 1–60 characters",
+            )
+
+    if new_dt is None and new_title is None:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+
+    return crud.update_session(
+        db, session_id, new_created_at=new_dt, new_title=new_title
+    )

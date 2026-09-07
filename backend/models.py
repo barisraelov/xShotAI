@@ -68,6 +68,9 @@ class Session(Base):
     user_id      = Column(String, ForeignKey("users.id"), nullable=False, index=True)
     job_id       = Column(String, ForeignKey("jobs.job_id"), nullable=True)
     created_at   = Column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    # User-editable label for the session. Nullable for rows created before the
+    # column existed; the API/UI fall back to "Training Session" when unset.
+    title        = Column(String(60), nullable=True)
 
     total_shots  = Column(Integer, nullable=False, default=0)
     made         = Column(Integer, nullable=False, default=0)

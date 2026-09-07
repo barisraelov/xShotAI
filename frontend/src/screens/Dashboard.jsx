@@ -4,6 +4,7 @@ import { isAuthed } from '../auth'
 import { getSession, getSessions } from '../api'
 import { getLevelInfo } from '../utils/levels'
 import { computeInsights, INSIGHT_FALLBACK } from '../utils/insights'
+import { sessionTitle } from '../utils/sessions'
 import './Dashboard.css'
 
 const RECENT_LIMIT = 5
@@ -86,6 +87,7 @@ export default function Dashboard({ navigate, result }) {
         jobId: data.id,
         sessionId: data.id,
         sessionDate: data.created_at,
+        sessionTitle: data.title,
         error: null,
       })
     } catch (err) {
@@ -220,7 +222,10 @@ export default function Dashboard({ navigate, result }) {
                     onClick={() => openSession(s.id)}
                     disabled={!!openingId}
                   >
-                    <span className="history-date">{formatDate(s.created_at)}</span>
+                    <span className="history-main">
+                      <span className="history-title">{sessionTitle(s)}</span>
+                      <span className="history-date">{formatDate(s.created_at)}</span>
+                    </span>
                     <span className="history-stat">
                       {s.made}/{s.total_shots}
                       <span className="history-pct"> · {Math.round(Number(s.accuracy_pct) || 0)}%</span>

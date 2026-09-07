@@ -66,22 +66,22 @@ export function getSession(sessionId) {
 }
 
 /**
- * Reschedule a saved session to a different date.
- * `newDateIso` is a full ISO timestamp. Resolves to the updated session
- * (`{ id, created_at, ... }`). When the backend has no PATCH endpoint yet
- * (404 / 405 / 501) or is unreachable, resolves to a simulated result
- * (`{ id, created_at, simulated: true }`) so local dev still works.
+ * Edit a saved session. `patch` may carry `created_at` (full ISO timestamp)
+ * and/or `title` (1–60 chars). Resolves to the updated session object.
+ * When the backend has no PATCH endpoint yet (404 / 405 / 501) or is
+ * unreachable, resolves to a simulated echo (`{ id, ...patch, simulated: true }`)
+ * so local dev still works.
  */
-export async function updateSessionDate(sessionId, newDateIso) {
+export async function updateSession(sessionId, patch) {
   let res
   try {
     res = await fetch(`${API_BASE}/sessions/${sessionId}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json', ...authHeaders() },
-      body: JSON.stringify({ created_at: newDateIso }),
+      body: JSON.stringify(patch),
     })
   } catch {
-    return { id: sessionId, created_at: newDateIso, simulated: true }
+    return { id: sessionId, ...patch, simulated: true }
   }
 
   if (res.status === 401) {
@@ -89,12 +89,22 @@ export async function updateSessionDate(sessionId, newDateIso) {
     throw new Error('Session expired — please log in again')
   }
   if (res.status === 404 || res.status === 405 || res.status === 501) {
-    return { id: sessionId, created_at: newDateIso, simulated: true }
+    return { id: sessionId, ...patch, simulated: true }
   }
   if (res.status === 400 || res.status === 422) {
     const data = await res.json().catch(() => ({}))
-    throw new Error(data.detail || 'That date is not valid.')
+    throw new Error(data.detail || 'That change is not valid.')
   }
-  if (!res.ok) throw new Error(`Failed to update date (${res.status})`)
+  if (!res.ok) throw new Error(`Failed to update session (${res.status})`)
   return res.json()
+}
+
+/** Reschedule a saved session to a different date/time. */
+export function updateSessionDate(sessionId, newDateIso) {
+  return updateSession(sessionId, { created_at: newDateIso })
+}
+
+/** Rename a saved session. `newTitle` should already be trimmed. */
+export function updateSessionTitle(sessionId, newTitle) {
+  return updateSession(sessionId, { title: newTitle })
 }

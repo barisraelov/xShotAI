@@ -2,7 +2,8 @@ import { useState } from 'react'
 import Logo from '../components/Logo'
 import CourtMap from '../components/CourtMap'
 import VisualFeedback, { VisualSessionSummary } from '../components/VisualFeedback'
-import { updateSessionDate } from '../api'
+import { updateSessionDate, updateSessionTitle } from '../api'
+import { MAX_SESSION_TITLE_LEN, SESSION_TITLE_FALLBACK } from '../utils/sessions'
 import './Session.css'
 
 const MONTHS_SHORT = [
@@ -163,6 +164,108 @@ function SessionDateEditor({ sessionId, sessionDate, onSaved }) {
   )
 }
 
+/** Inline "edit session title" control shown as the Session header heading. */
+function SessionTitleEditor({ sessionId, sessionTitle, onSaved }) {
+  const [displayTitle, setDisplayTitle] = useState(
+    (sessionTitle || '').trim() || SESSION_TITLE_FALLBACK,
+  )
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(displayTitle)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+
+  function startEdit() {
+    setDraft(displayTitle)
+    setError(null)
+    setEditing(true)
+  }
+  function cancel() {
+    setEditing(false)
+    setError(null)
+  }
+
+  async function save() {
+    if (saving) return
+    const trimmed = draft.trim()
+    if (!trimmed) {
+      setError('Title cannot be empty.')
+      return
+    }
+    if (trimmed === displayTitle) {
+      setEditing(false)
+      return
+    }
+    setSaving(true)
+    setError(null)
+    try {
+      const updated = await updateSessionTitle(sessionId, trimmed)
+      const savedTitle = updated?.title || trimmed
+      setDisplayTitle(savedTitle)
+      setEditing(false)
+      onSaved?.(savedTitle)
+    } catch (err) {
+      setError('Failed to update title. Please try again.')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  if (editing) {
+    return (
+      <div className="session-title-row">
+        <div className="session-title-edit">
+          <input
+            type="text"
+            className="session-title-input"
+            value={draft}
+            maxLength={MAX_SESSION_TITLE_LEN}
+            autoFocus
+            onChange={e => setDraft(e.target.value)}
+            onKeyDown={e => {
+              if (e.key === 'Enter') save()
+              if (e.key === 'Escape') cancel()
+            }}
+            disabled={saving}
+            aria-label="Session title"
+          />
+          <button
+            type="button"
+            className="btn btn-primary session-title-save"
+            onClick={save}
+            disabled={saving}
+          >
+            {saving ? <span className="session-date-spinner" aria-hidden="true" /> : 'Save'}
+          </button>
+          <button
+            type="button"
+            className="session-title-cancel"
+            onClick={cancel}
+            disabled={saving}
+          >
+            Cancel
+          </button>
+        </div>
+        {error && <span className="session-date-error" role="alert">{error}</span>}
+      </div>
+    )
+  }
+
+  return (
+    <div className="session-title-row">
+      <h1 className="session-title-value">{displayTitle}</h1>
+      <button
+        type="button"
+        className="session-date-edit-btn"
+        onClick={startEdit}
+        aria-label="Edit session title"
+        title="Edit session title"
+      >
+        ✏️
+      </button>
+    </div>
+  )
+}
+
 // Find the zone with the most attempts and lowest accuracy to produce a tip
 function weakestZone(zoneAggregates) {
   if (!zoneAggregates?.length) return null
@@ -271,7 +374,9 @@ export default function Session({
   liveDiagnostics,
   sessionId,
   sessionDate,
+  sessionTitle,
   onSessionDateChange,
+  onSessionTitleChange,
 }) {
   if (!result) {
     return (
@@ -302,6 +407,15 @@ export default function Session({
       <div className="top-bar">
         <Logo onClick={() => navigate('dashboard')} />
       </div>
+
+      {sessionId && (
+        <SessionTitleEditor
+          key={sessionId}
+          sessionId={sessionId}
+          sessionTitle={sessionTitle}
+          onSaved={onSessionTitleChange}
+        />
+      )}
 
       {sessionId && sessionDate && (
         <SessionDateEditor

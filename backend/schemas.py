@@ -7,7 +7,10 @@ These are transport shapes only — the ORM models live in models.py.
 from datetime import datetime
 from typing import Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr
+from pydantic import BaseModel, ConfigDict, EmailStr, Field
+
+# Shown when a session has no user-set title (old rows, or a cleared field).
+DEFAULT_SESSION_TITLE = "Training Session"
 
 
 class UserCreate(BaseModel):
@@ -45,6 +48,7 @@ class SessionSummary(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    title: Optional[str] = None
     created_at: datetime
     total_shots: int
     made: int
@@ -58,9 +62,11 @@ class SessionDetail(SessionSummary):
     result: dict
 
 
-class SessionDateUpdate(BaseModel):
-    """PATCH /sessions/{id} body — reschedule a saved session to another date."""
-    created_at: datetime
+class SessionUpdate(BaseModel):
+    """PATCH /sessions/{id} body — edit a saved session's date and/or title.
+    Both fields optional so a caller can change just one."""
+    created_at: Optional[datetime] = None
+    title: Optional[str] = Field(None, max_length=60)
 
 
 class ChangePasswordRequest(BaseModel):
