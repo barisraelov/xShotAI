@@ -22,6 +22,7 @@ import Progress    from './screens/Progress'
 import Statistics  from './screens/Statistics'
 import History     from './screens/History'
 import Profile     from './screens/Profile'
+import Terms       from './screens/Terms'
 import Placeholder from './screens/Placeholder'
 
 // Dev helper: ?demo=session or ?demo=heatmap loads stub result immediately
@@ -87,6 +88,7 @@ function demoView() {
 
 const INITIAL_STATE = {
   view:   demoView() ?? (isAuthed() ? 'dashboard' : 'welcome'),
+  prevView: null,  // the view navigated away from — lets sub-pages offer "← Back"
   jobId:  demoView() ? 'demo' : null,
   result: demoView() ? DEMO_STUB : null,
   error:  null,
@@ -126,10 +128,10 @@ export default function App() {
     // Route protection: a logged-out user can never reach an authenticated-only
     // view. Send them to login instead of the dashboard.
     if (isBlockedWhileLoggedOut(view)) {
-      setState(s => ({ ...s, view: 'login', error: null }))
+      setState(s => ({ ...s, view: 'login', prevView: s.view, error: null }))
       return
     }
-    setState(s => ({ ...s, view, ...patch }))
+    setState(s => ({ ...s, view, prevView: s.view, ...patch }))
   }
 
   function handleLogout() {
@@ -186,6 +188,7 @@ export default function App() {
     error:  state.error,
     file:   state.file,
     liveDiagnostics: state.liveDiagnostics,
+    prevView: state.prevView,
     user,
     levelInfo,
   }
@@ -226,14 +229,7 @@ export default function App() {
       {state.view === 'statistics' && <Statistics {...screenProps} />}
       {state.view === 'history'    && <History    {...screenProps} />}
       {state.view === 'profile'    && <Profile    {...screenProps} />}
-      {state.view === 'terms'      && (
-        <Placeholder
-          {...screenProps}
-          icon="📄"
-          title="Terms & Conditions"
-          blurb="Terms and Conditions — Coming soon"
-        />
-      )}
+      {state.view === 'terms'      && <Terms       {...screenProps} />}
       {state.view === 'contact'    && (
         <Placeholder
           {...screenProps}
